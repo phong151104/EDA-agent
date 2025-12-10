@@ -16,9 +16,12 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from dotenv import load_dotenv
 
 import yaml
 from neo4j import GraphDatabase, Driver, ManagedTransaction
+
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
