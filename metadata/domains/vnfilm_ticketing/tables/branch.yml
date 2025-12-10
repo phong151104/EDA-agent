@@ -144,7 +144,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.branch
       WHERE status = 'ACTIVE'
       GROUP BY vendor_id
-      ORDER BY active_branches DESC;
+      ORDER BY active_branches DESC
 
   - description: "Danh sách chi nhánh theo từng vendor"
     sql: |
@@ -155,4 +155,4 @@ sample_queries:
         b.status
       FROM lakehouse.lh_vnfilm_v2.branch b
       ORDER BY b.vendor_id, b.code
-      LIMIT 200;
+      LIMIT 200

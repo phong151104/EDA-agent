@@ -1,0 +1,160 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: pre_order_customer
+domain: vnfilm_ticketing
+
+table_type: dim_extension
+business_name: "Bảng thông tin khách hàng đặt vé (Pre-Order)"
+grain: "1 dòng = 1 khách hàng gắn với 1 phiên giao dịch pre_order (quan hệ 1-1)."
+
+description: >
+  Bảng pre_order_customer là bảng mở rộng (extension) của bảng pre_order.
+  Nhiệm vụ chính là lưu trữ thông tin định danh khách hàng (tên, email) và thông tin xuất hóa đơn thuế (nếu khách có yêu cầu) 
+  tại thời điểm thực hiện giao dịch đặt vé.
+
+tags:
+  - extension
+  - customer_info
+  - tax_invoice
+  - pii
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: id
+    references_table: "lakehouse.lh_vnfilm_v2.pre_order"
+    references_column: "id"
+    relation: "one_to_one"
+    description: "Mapping 1-1 với bảng pre_order (ID của bảng này chính là ID của pre_order)."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "tax_code is not null để lọc các đơn hàng có yêu cầu xuất hóa đơn"
+  - "created_date để trace log theo thời gian"
+
+concepts:
+  - name: customer
+    synonyms: ["khách hàng", "người dùng", "user"]
+  - name: tax_info
+    synonyms: ["hóa đơn đỏ", "vat", "tax", "thuế"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID Pre-Order"
+    description: "Mã định danh bản ghi, trùng với ID của bảng Pre-Order."
+    semantics: [id, primary, foreign_key]
+    pii: false
+
+  # --- CUSTOMER IDENTITY (PII) ---
+  identity_name:
+    data_type: varchar
+    business_name: "Tên khách hàng"
+    description: "Họ và tên khách hàng đặt vé."
+    semantics: [name, customer]
+    pii: true
+    sensitive: true
+
+  identity_email:
+    data_type: varchar
+    business_name: "Email khách hàng"
+    description: "Địa chỉ email của khách hàng."
+    semantics: [email, customer]
+    pii: true
+    sensitive: true
+
+  identity_code:
+    data_type: varchar
+    business_name: "Mã định danh KH"
+    description: "Mã định danh khách hàng (User ID/Login ID) từ hệ thống nguồn."
+    semantics: [id, customer, external_id]
+    pii: true
+    sensitive: true
+
+  identity_code_hash:
+    data_type: varchar
+    business_name: "Mã định danh KH (Hash)"
+    description: "Mã hash của identity_code (dùng cho map dữ liệu an toàn)."
+    semantics: [id, customer, hash]
+    pii: false
+    sensitive: true
+
+  # --- TAX INVOICE INFO ---
+  tax_code:
+    data_type: varchar
+    business_name: "Mã số thuế"
+    description: "Mã số thuế khách hàng nhập (nếu yêu cầu xuất hóa đơn)."
+    semantics: [code, tax]
+
+  tax_name:
+    data_type: varchar
+    business_name: "Tên đơn vị thuế"
+    description: "Tên công ty/cá nhân trên hóa đơn thuế."
+    semantics: [name, tax]
+
+  tax_address:
+    data_type: varchar
+    business_name: "Địa chỉ thuế"
+    description: "Địa chỉ đăng ký thuế."
+    semantics: [address, tax]
+
+  tax_email:
+    data_type: varchar
+    business_name: "Email nhận hóa đơn"
+    description: "Email để nhận hóa đơn điện tử."
+    semantics: [email, tax]
+
+  # --- SYSTEM ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm ghi nhận thông tin."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - identity_name
+      - identity_email
+      - identity_code
+      - tax_email
+      - created_by
+
+sample_questions:
+  - "Tỷ lệ khách hàng yêu cầu xuất hóa đơn đỏ (có tax_code)?"
+  - "Danh sách email khách hàng đặt vé trong ngày (cần quyền PII)?"
+  - "Kiểm tra thông tin xuất hóa đơn của một đơn hàng cụ thể?"
+
+sample_queries:
+  - description: "Thống kê tỷ lệ đơn hàng có yêu cầu xuất hóa đơn VAT"
+    sql: |
+      SELECT
+        CASE WHEN tax_code IS NOT NULL AND tax_code != '' THEN 'VAT Invoice' ELSE 'Personal' END as invoice_type,
+        COUNT(*) as total_orders
+      FROM lakehouse.lh_vnfilm_v2.pre_order_customer
+      WHERE created_date >= date_trunc('month', current_date)
+      GROUP BY 1

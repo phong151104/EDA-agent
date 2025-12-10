@@ -158,7 +158,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.locations
       WHERE status = 'ACTIVE'
       ORDER BY city_name, promotion_location_code
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Thống kê số lượng location theo city_name"
     sql: |
@@ -167,4 +167,4 @@ sample_queries:
         COUNT(*) AS total_locations
       FROM lakehouse.lh_vnfilm_v2.locations
       GROUP BY city_name
-      ORDER BY total_locations DESC;
+      ORDER BY total_locations DESC

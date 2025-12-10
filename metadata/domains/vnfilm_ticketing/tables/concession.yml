@@ -176,7 +176,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.concession
       WHERE status = 'ACTIVE'
       ORDER BY vendor_id, price DESC
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Thống kê số concession theo rạp"
     sql: |
@@ -186,4 +186,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.concession
       GROUP BY cinema_id
       ORDER BY total_concessions DESC
-      LIMIT 200;
+      LIMIT 200

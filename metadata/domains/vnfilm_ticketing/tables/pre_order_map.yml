@@ -1,0 +1,157 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: pre_order_map
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng lưu vết chọn ghế/bắp nước (Session Map)"
+grain: "1 dòng = 1 trạng thái chọn (giỏ hàng) của người dùng tại một thời điểm."
+
+description: >
+  Bảng pre_order_map lưu trữ snapshot (ảnh chụp) trạng thái các ghế và combo mà người dùng đang chọn.
+  Dữ liệu ghế (seats) được lưu dưới dạng mảng ID, và combo (concessions) được lưu dưới dạng JSON (ID: Số lượng).
+  Bảng này thường dùng để giữ trạng thái phiên làm việc (session) hoặc phục vụ việc lock ghế tạm thời.
+
+tags:
+  - fact
+  - session_state
+  - shopping_cart
+  - json_data
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng bank (nếu có thông tin ngân hàng)."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign (nếu có)."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "created_date cho việc dọn dẹp data rác (TTL)"
+  - "created_by để truy vết theo session/user hash"
+
+concepts:
+  - name: seat_selection
+    synonyms: ["chọn ghế", "seat list"]
+  - name: concession_selection
+    synonyms: ["chọn món", "concession list"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của phiên lưu vết."
+    semantics: [id, primary]
+    pii: false
+
+  seats:
+    data_type: varchar
+    business_name: "Danh sách ghế (Array)"
+    description: "Chuỗi JSON/Mảng chứa danh sách các ID ghế đã chọn (Ví dụ: [50000167, 50000168])."
+    semantics: [data, array, seat_ids]
+
+  concessions:
+    data_type: varchar
+    business_name: "Danh sách Combo (JSON)"
+    description: "Chuỗi JSON mapping giữa ID Combo và Số lượng (Ví dụ: {'3': 1} nghĩa là ID=3 số lượng 1)."
+    semantics: [data, json, concession_qty]
+
+  bank_id:
+    data_type: bigint
+    business_name: "ID Ngân hàng"
+    description: "Mã định danh ngân hàng (nếu user đi từ app bank)."
+    semantics: [id, bank]
+
+  bank_identity:
+    data_type: varchar
+    business_name: "User ID (Bank)"
+    description: "Định danh người dùng phía ngân hàng."
+    semantics: [user_identity, bank]
+    pii: true
+    sensitive: true
+
+  # --- CAMPAIGN INFO ---
+  campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch"
+    description: "Mã chiến dịch khuyến mãi (nếu có)."
+    semantics: [id, campaign]
+
+  sub_campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch con"
+    description: "Mã chiến dịch con."
+    semantics: [id, campaign, sub]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã Campaign"
+    description: "Mã code chiến dịch."
+    semantics: [code, campaign]
+
+  # --- SYSTEM INFO ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm khởi tạo phiên chọn vé."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Session ID / User Hash"
+    description: "Mã hash định danh session hoặc user tạo bản ghi này (Ví dụ: e411076...)."
+    semantics: [id, session, creator]
+    pii: false
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật lại giỏ hàng lần cuối."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "Mã hash user cập nhật (thường trùng created_by)."
+    semantics: [id, session, modifier]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - bank_identity
+
+sample_questions:
+  - "User này đang chọn bao nhiêu ghế?"
+  - "Các ID ghế nào đang được giữ trong session này?"
+  - "Có bao nhiêu session chọn ghế nhưng không có combo (concessions is null/empty)?"
+
+sample_queries:
+  - description: "Kiểm tra các session có chọn ghế trong 1 giờ qua"
+    sql: |
+      SELECT
+        id,
+        seats,
+        concessions,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.pre_order_map
+      WHERE created_date >= date_trunc('hour', current_timestamp) - interval '1' hour
+        AND seats IS NOT NULL
+      ORDER BY created_date DESC

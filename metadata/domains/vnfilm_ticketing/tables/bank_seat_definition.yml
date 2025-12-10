@@ -140,7 +140,7 @@ sample_queries:
         COUNT(*) AS total_seat_definitions
       FROM lakehouse.lh_vnfilm_v2.bank_seat_definition
       GROUP BY bank_id
-      ORDER BY total_seat_definitions DESC;
+      ORDER BY total_seat_definitions DESC
 
   - description: "Danh sách seat definition ACTIVE theo vendor"
     sql: |
@@ -150,4 +150,4 @@ sample_queries:
         status
       FROM lakehouse.lh_vnfilm_v2.bank_seat_definition
       WHERE status = 'ACTIVE'
-      ORDER BY vendor_id, mapping_type;
+      ORDER BY vendor_id, mapping_type

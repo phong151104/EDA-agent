@@ -207,7 +207,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.campaign
       WHERE status = 'ACTIVE'
       ORDER BY booking_date_from
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Các campaign của vendor cụ thể"
     sql: |
@@ -220,4 +220,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.campaign
       WHERE vendor_id = 123
       ORDER BY booking_date_from DESC
-      LIMIT 200;
+      LIMIT 200

@@ -1,0 +1,92 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: sub_campaign_collector
+domain: vnfilm_ticketing
+
+table_type: fact_inventory
+business_name: "Bảng theo dõi hạn mức chiến dịch (Collector)"
+grain: "1 dòng = 1 loại tài nguyên (ghế/combo) của 1 chiến dịch con."
+
+description: >
+  Bảng sub_campaign_collector dùng để theo dõi số lượng (quota) đã sử dụng hoặc đang giữ (collected) của một Sub-Campaign.
+  Bảng này phục vụ việc kiểm soát tồn kho khuyến mãi (Inventory) theo thời gian thực, đảm bảo không áp dụng quá số lượng cho phép.
+  Cơ chế Version Change thường được dùng để xử lý đồng thời (Concurrency Control).
+
+tags:
+  - fact
+  - inventory
+  - quota_tracking
+  - campaign_usage
+  - concurrency
+  - vnfilm
+
+primary_key:
+  - id
+  - type
+
+foreign_keys:
+  - column: id
+    references_table: "lakehouse.lh_vnfilm_v2.sub_campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "ID này chính là Sub-Campaign ID (Quan hệ: Một Sub-Campaign có nhiều Collector theo type)."
+
+time_columns: []
+
+recommended_filters:
+  - "type để xem hạn mức của ghế (seat) hoặc combo (concession)"
+  - "quantity để xem số lượng đã tiêu thụ"
+
+concepts:
+  - name: usage
+    synonyms: ["tiêu thụ", "đã dùng", "collected"]
+  - name: concurrency
+    synonyms: ["đồng thời", "versioning", "lock"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID Sub-Campaign"
+    description: "Mã định danh của chiến dịch con (Sub-Campaign) cần theo dõi."
+    semantics: [id, foreign_key, campaign]
+    pii: false
+
+  type:
+    data_type: varchar
+    business_name: "Loại tài nguyên"
+    description: "Loại hạn mức đang theo dõi (seat: Ghế, concession: Bắp nước)."
+    semantics: [category, resource_type]
+
+  quantity:
+    data_type: integer
+    business_name: "Số lượng đã dùng"
+    description: "Tổng số lượng (ghế/combo) đã được claim/sử dụng tính đến hiện tại."
+    semantics: [metric, usage, inventory]
+
+  version_change:
+    data_type: bigint
+    business_name: "Phiên bản thay đổi"
+    description: "Số version tăng dần mỗi khi quantity thay đổi (Dùng cho Optimistic Locking)."
+    semantics: [system, version, concurrency]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+
+sample_questions:
+  - "Chiến dịch này đã sử dụng bao nhiêu ghế (quantity)?"
+  - "Tần suất thay đổi (version_change) của chiến dịch này có cao không?"
+
+sample_queries:
+  - description: "Kiểm tra số lượng đã sử dụng của các chiến dịch"
+    sql: |
+      SELECT
+        id as sub_campaign_id,
+        type,
+        quantity,
+        version_change
+      FROM lakehouse.lh_vnfilm_v2.sub_campaign_collector
+      ORDER BY quantity DESC

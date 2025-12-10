@@ -1,0 +1,312 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: vendor
+domain: vnfilm_ticketing
+
+table_type: dimension
+business_name: "Bảng danh sách đối tác rạp (Vendor)"
+grain: "1 dòng = 1 đối tác tích hợp (Ví dụ: CGV, Lotte, BHD...)."
+
+description: >
+  Bảng vendor lưu trữ thông tin cấu hình chi tiết của các đối tác rạp chiếu phim tích hợp với hệ thống.
+  Bao gồm thông tin kết nối kỹ thuật (API, Domain), cấu hình Business (Hoa hồng, Thuế, Giới hạn đặt vé),
+  cấu hình Job đồng bộ dữ liệu (Sync Interval) và các thông tin hiển thị (Logo, Mô tả).
+
+tags:
+  - dim
+  - vendor
+  - partner
+  - configuration
+  - integration
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys: []
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status = 'active' để lấy các đối tác đang hoạt động"
+  - "job_status = 'active' để giám sát các đối tác đang bật đồng bộ"
+
+concepts:
+  - name: commission
+    synonyms: ["hoa hồng", "chiết khấu", "discount_percent"]
+  - name: sync_job
+    synonyms: ["đồng bộ", "job interval", "crawling"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID Vendor"
+    description: "Mã định danh duy nhất của đối tác."
+    semantics: [id, primary]
+    pii: false
+
+  # --- IDENTITY & DISPLAY ---
+  name_vi:
+    data_type: varchar
+    business_name: "Tên Vendor (VI)"
+    description: "Tên đối tác tiếng Việt."
+    semantics: [name, vendor, vi]
+
+  name_en:
+    data_type: varchar
+    business_name: "Tên Vendor (EN)"
+    description: "Tên đối tác tiếng Anh."
+    semantics: [name, vendor, en]
+
+  logo:
+    data_type: varchar
+    business_name: "Logo"
+    description: "URL logo của đối tác."
+    semantics: [url, logo, ui_element]
+
+  image:
+    data_type: varchar
+    business_name: "Hình ảnh"
+    description: "URL hình ảnh đại diện/banner của đối tác."
+    semantics: [url, image, ui_element]
+
+  description:
+    data_type: varchar
+    business_name: "Mô tả chung"
+    description: "Thông tin giới thiệu về đối tác."
+    semantics: [text, description]
+
+  description_vi:
+    data_type: varchar
+    business_name: "Mô tả (VI)"
+    description: "Mô tả chi tiết tiếng Việt."
+    semantics: [text, description, vi]
+
+  description_en:
+    data_type: varchar
+    business_name: "Mô tả (EN)"
+    description: "Mô tả chi tiết tiếng Anh."
+    semantics: [text, description, en]
+
+  display_order:
+    data_type: integer
+    business_name: "Thứ tự hiển thị"
+    description: "Độ ưu tiên hiển thị trên giao diện (số nhỏ lên đầu)."
+    semantics: [metric, sorting]
+
+  # --- TECHNICAL CONFIG ---
+  local_domain:
+    data_type: varchar
+    business_name: "Local Domain"
+    description: "Địa chỉ API nội bộ/Local để kết nối."
+    semantics: [url, api_endpoint]
+
+  project_domain:
+    data_type: varchar
+    business_name: "Project Domain"
+    description: "Địa chỉ domain dự án/public (nếu có)."
+    semantics: [url, api_endpoint]
+
+  secret:
+    data_type: varchar
+    business_name: "API Secret"
+    description: "Mã bí mật để xác thực kết nối API."
+    semantics: [password, secret_key]
+
+  # --- BUSINESS RULES & LIMITS ---
+  max_seat:
+    data_type: integer
+    business_name: "Max Ghế/Đơn"
+    description: "Số lượng ghế tối đa trong 1 đơn hàng (-1 là không giới hạn)."
+    semantics: [metric, limit, seat]
+
+  max_concession:
+    data_type: integer
+    business_name: "Max Combo/Đơn"
+    description: "Số lượng combo tối đa trong 1 đơn hàng (-1 là không giới hạn)."
+    semantics: [metric, limit, concession]
+
+  multiple_seat_support:
+    data_type: varchar
+    business_name: "Hỗ trợ đa loại ghế"
+    description: "Có hỗ trợ đặt nhiều loại ghế trong 1 đơn không (supported/unsupported)."
+    semantics: [flag, feature_support]
+
+  concession_support:
+    data_type: varchar
+    business_name: "Hỗ trợ Combo"
+    description: "Có hỗ trợ bán bắp nước không (supported/unsupported)."
+    semantics: [flag, feature_support]
+
+  payment_order_lead_second:
+    data_type: integer
+    business_name: "Thời gian thanh toán"
+    description: "Thời gian tối đa cho phép thanh toán (giữ ghế) tính bằng giây."
+    semantics: [metric, duration, timeout]
+
+  create_order_lead_second:
+    data_type: integer
+    business_name: "Thời gian tạo đơn"
+    description: "Thời gian xử lý tạo đơn tối đa (giây)."
+    semantics: [metric, duration, timeout]
+
+  # --- FINANCIAL CONFIG ---
+  seat_discount_percent:
+    data_type: decimal(38,18)
+    business_name: "% Hoa hồng Ghế"
+    description: "Tỷ lệ hoa hồng/chiết khấu trên vé."
+    semantics: [percentage, commission, seat]
+
+  seat_discount_tax:
+    data_type: decimal(38,18)
+    business_name: "Thuế chiết khấu Ghế"
+    description: "Tỷ lệ thuế áp dụng lên phần chiết khấu ghế."
+    semantics: [percentage, tax, seat]
+
+  concession_discount_percent:
+    data_type: decimal(38,18)
+    business_name: "% Hoa hồng Combo"
+    description: "Tỷ lệ hoa hồng/chiết khấu trên combo."
+    semantics: [percentage, commission, concession]
+
+  concession_discount_tax:
+    data_type: decimal(38,18)
+    business_name: "Thuế chiết khấu Combo"
+    description: "Tỷ lệ thuế áp dụng lên phần chiết khấu combo."
+    semantics: [percentage, tax, concession]
+
+  # --- SUB FEE CONFIG (Ignored List) ---
+  sub_fee_ignored_film:
+    data_type: varchar
+    business_name: "Miễn phụ phí (Phim)"
+    description: "Danh sách ID phim không thu phụ phí."
+    semantics: [data, list, fee_exemption]
+
+  sub_fee_ignored_cinema:
+    data_type: varchar
+    business_name: "Miễn phụ phí (Rạp)"
+    description: "Danh sách ID rạp không thu phụ phí."
+    semantics: [data, list, fee_exemption]
+
+  sub_fee_ignored_session:
+    data_type: varchar
+    business_name: "Miễn phụ phí (Suất)"
+    description: "Danh sách ID suất chiếu không thu phụ phí."
+    semantics: [data, list, fee_exemption]
+
+  sub_fee_ignored_vendor_seat_type:
+    data_type: varchar
+    business_name: "Miễn phụ phí (Loại ghế)"
+    description: "Danh sách loại ghế không thu phụ phí."
+    semantics: [data, list, fee_exemption]
+
+  sub_fee_ignored_room_id:
+    data_type: varchar
+    business_name: "Miễn phụ phí (Phòng)"
+    description: "Danh sách ID phòng chiếu không thu phụ phí."
+    semantics: [data, list, fee_exemption]
+
+  # --- JOB SYNC CONFIG ---
+  job_status:
+    data_type: varchar
+    business_name: "Trạng thái Job"
+    description: "Trạng thái hoạt động của các job đồng bộ (active/inactive)."
+    semantics: [status, job_state]
+
+  job_delay_first_time:
+    data_type: integer
+    business_name: "Delay lần đầu"
+    description: "Thời gian chờ trước khi chạy job lần đầu (giây)."
+    semantics: [metric, duration]
+
+  job_interval_cinema:
+    data_type: integer
+    business_name: "Chu kỳ Sync Rạp"
+    description: "Khoảng thời gian giữa các lần đồng bộ danh sách rạp (giây)."
+    semantics: [metric, duration, frequency]
+
+  job_interval_film:
+    data_type: integer
+    business_name: "Chu kỳ Sync Phim"
+    description: "Khoảng thời gian giữa các lần đồng bộ danh sách phim (giây)."
+    semantics: [metric, duration, frequency]
+
+  job_interval_session:
+    data_type: integer
+    business_name: "Chu kỳ Sync Suất"
+    description: "Khoảng thời gian giữa các lần đồng bộ suất chiếu (giây)."
+    semantics: [metric, duration, frequency]
+
+  job_interval_concession:
+    data_type: integer
+    business_name: "Chu kỳ Sync Combo"
+    description: "Khoảng thời gian giữa các lần đồng bộ combo (giây)."
+    semantics: [metric, duration, frequency]
+
+  # --- SYSTEM STATUS ---
+  status:
+    data_type: varchar
+    business_name: "Trạng thái Vendor"
+    description: "Trạng thái hoạt động chung của Vendor (active/inactive)."
+    semantics: [status, active_state]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm tạo cấu hình vendor."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật cấu hình lần cuối."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User hệ thống cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    forbidden_columns:
+      - secret
+      - created_by
+
+sample_questions:
+  - "Vendor nào có mức chiết khấu ghế (seat_discount_percent) cao nhất?"
+  - "Danh sách các Vendor đang tắt đồng bộ (job_status = inactive)?"
+  - "Cấu hình thời gian giữ vé (payment_order_lead_second) của CGV là bao lâu?"
+
+sample_queries:
+  - description: "So sánh cấu hình hoa hồng giữa các Vendor"
+    sql: |
+      SELECT
+        name_vi,
+        seat_discount_percent,
+        concession_discount_percent
+      FROM lakehouse.lh_vnfilm_v2.vendor
+      WHERE status = 'active'
+      ORDER BY seat_discount_percent DESC

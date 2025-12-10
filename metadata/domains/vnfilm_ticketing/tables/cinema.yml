@@ -217,8 +217,7 @@ sample_queries:
         status
       FROM lakehouse.lh_vnfilm_v2.cinema
       WHERE status = 'ACTIVE'
-      ORDER BY vendor_id, name_vi;
-
+      ORDER BY vendor_id, name_vi
   - description: "Thống kê số rạp theo vendor"
     sql: |
       SELECT
@@ -226,4 +225,4 @@ sample_queries:
         COUNT(*) AS total_cinemas
       FROM lakehouse.lh_vnfilm_v2.cinema
       GROUP BY vendor_id
-      ORDER BY total_cinemas DESC;
+      ORDER BY total_cinemas DESC

@@ -1,0 +1,214 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: pre_order_concession_map
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng mapping bắp nước tạm thời (Cart/Session Map)"
+grain: "1 dòng = 1 món bắp nước đang được user chọn (chưa tạo đơn)."
+
+description: >
+  Bảng pre_order_concession_map lưu trữ trạng thái các món bắp nước (Concession) mà người dùng đang chọn.
+  Dữ liệu được gắn với định danh người dùng (bank_identity) thay vì đơn hàng cụ thể. 
+  Bảng này thường dùng để lưu "Giỏ hàng" hoặc cache các lựa chọn của user trong quá trình đặt vé.
+
+tags:
+  - fact
+  - temporary
+  - shopping_cart
+  - session_data
+  - concession
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng bank để xác định nguồn ngân hàng."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign (nếu có)."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "created_date cho việc dọn dẹp data cũ (TTL)"
+  - "bank_id để phân tích hành vi user theo ngân hàng"
+  - "vendor_name để xem món nào hay được add vào giỏ nhất"
+
+concepts:
+  - name: cart_item
+    synonyms: ["món trong giỏ", "lựa chọn tạm"]
+  - name: session_map
+    synonyms: ["phiên làm việc", "user session"]
+
+columns:
+  id:
+    data_type: varchar
+    business_name: "ID bản ghi (Key)"
+    description: "Khóa chính dạng chuỗi (Composite Key), thường kết hợp giữa BankID, UserID và ItemID."
+    semantics: [id, primary, key]
+    pii: false
+
+  id_value:
+    data_type: bigint
+    business_name: "ID Giá trị / Sequence"
+    description: "Mã định danh nội bộ hoặc số thứ tự của món trong danh sách chọn."
+    semantics: [id, sequence]
+
+  bank_id:
+    data_type: bigint
+    business_name: "ID Ngân hàng"
+    description: "Mã định danh ngân hàng."
+    semantics: [id, bank]
+
+  # --- VENDOR PRODUCT INFO ---
+  vendor_id:
+    data_type: varchar
+    business_name: "Mã Combo (Vendor)"
+    description: "Mã sản phẩm phía Vendor."
+    semantics: [id, vendor, product]
+
+  vendor_name:
+    data_type: varchar
+    business_name: "Tên Combo"
+    description: "Tên hiển thị của sản phẩm."
+    semantics: [name, product]
+
+  vendor_description:
+    data_type: varchar
+    business_name: "Mô tả Combo"
+    description: "Mô tả chi tiết sản phẩm."
+    semantics: [text, description]
+
+  vendor_image:
+    data_type: varchar
+    business_name: "Ảnh Combo"
+    description: "URL hình ảnh sản phẩm."
+    semantics: [url, image]
+
+  vendor_data:
+    data_type: varchar
+    business_name: "Dữ liệu Vendor (Raw)"
+    description: "Metadata bổ sung từ Vendor (JSON hoặc text)."
+    semantics: [data, metadata]
+
+  # --- PRICING ---
+  vendor_price:
+    data_type: decimal(38,18)
+    business_name: "Giá Vendor"
+    description: "Giá niêm yết từ Vendor."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  vnpay_price:
+    data_type: decimal(38,18)
+    business_name: "Giá VNPAY"
+    description: "Giá bán hiển thị trên VNPAY."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  # --- CAMPAIGN INFO ---
+  campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch"
+    description: "Mã chiến dịch khuyến mãi (nếu user đang chọn mã)."
+    semantics: [id, campaign]
+
+  sub_campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch con"
+    description: "Mã chiến dịch con."
+    semantics: [id, campaign, sub]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã Campaign"
+    description: "Mã code chiến dịch."
+    semantics: [code, campaign]
+
+  campaign_type:
+    data_type: varchar
+    business_name: "Loại Campaign"
+    description: "Loại hình chiến dịch (normal...)."
+    semantics: [category, campaign_type]
+
+  campaign_vendor_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Vendor"
+    description: "Số tiền khuyến mãi dự kiến từ Vendor."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  # --- USER IDENTITY (SESSION CONTEXT) ---
+  bank_identity:
+    data_type: varchar
+    business_name: "User ID (Bank)"
+    description: "Định danh người dùng từ ngân hàng (dùng để map giỏ hàng)."
+    semantics: [user_identity, bank]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    business_name: "User ID Hash"
+    description: "Mã hash định danh người dùng."
+    semantics: [user_identity, bank, hash]
+    pii: false
+
+  # --- SYSTEM ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm user chọn món."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User tạo bản ghi (thường trùng bank_identity)."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - bank_identity
+      - created_by
+
+sample_questions:
+  - "User này đang có những món gì trong giỏ hàng?"
+  - "Danh sách các món được thêm vào giỏ nhưng chưa chắc đã thanh toán?"
+  - "Kiểm tra giá hiển thị (vnpay_price) của một món cụ thể?"
+
+sample_queries:
+  - description: "Xem giỏ hàng hiện tại của một User (dựa trên Hash)"
+    sql: |
+      SELECT
+        vendor_name,
+        vnpay_price,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.pre_order_concession_map
+      WHERE bank_identity_hash = 'abc' -- Ví dụ hash
+      ORDER BY created_date DESC

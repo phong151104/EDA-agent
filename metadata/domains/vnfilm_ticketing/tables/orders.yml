@@ -1,0 +1,421 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: orders
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng giao dịch đặt vé (Orders)"
+grain: "1 dòng = 1 đơn hàng (booking transaction)."
+
+description: >
+  Bảng Orders là bảng Fact trung tâm, lưu trữ toàn bộ thông tin giao dịch đặt vé xem phim.
+  Bao gồm trạng thái thanh toán, trạng thái xuất vé, chi tiết các luồng tiền (VNPAY, Vendor, Bank),
+  thông tin khuyến mãi (Promotion/Campaign) và kết quả gạch nợ (Billing).
+
+tags:
+  - fact
+  - core
+  - order
+  - revenue
+  - finance
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng bank để lấy thông tin ngân hàng thanh toán."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign (nếu đơn hàng thuộc chiến dịch)."
+
+  - column: sub_campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.sub_campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng sub_campaign (nếu có)."
+
+time_columns:
+  - created_date
+  - modified_date
+  - expire_date
+  - billing_date
+  - issued_date
+  - promotion_hold_date
+  - promotion_commit_date
+
+recommended_filters:
+  - "status cho trạng thái thanh toán (payment/expired/initial)"
+  - "issue_status cho trạng thái xuất vé (issued/failed)"
+  - "source_booking cho nguồn đặt vé (mobile/web)"
+  - "created_date cho báo cáo doanh thu theo ngày"
+
+concepts:
+  - name: gmv
+    synonyms: ["doanh thu", "vnpay_final_amount", "revenue"]
+  - name: ticket_volume
+    synonyms: ["số vé", "number_of_seats", "ticket_count"]
+  - name: profit
+    synonyms: ["lợi nhuận", "lãi", "profit"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID đơn hàng"
+    description: "Mã định danh duy nhất của đơn hàng."
+    semantics: [id, primary]
+    pii: false
+
+  pay_code:
+    data_type: varchar
+    business_name: "Mã thanh toán"
+    description: "Mã giao dịch dùng để thanh toán (Business Key)."
+    semantics: [id, payment, business_key]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái thanh toán"
+    description: "Trạng thái thanh toán (initial: Khởi tạo, payment: Thành công, expired: Hết hạn)."
+    semantics: [status, payment_state]
+
+  issue_status:
+    data_type: varchar
+    business_name: "Trạng thái xuất vé"
+    description: "Trạng thái xuất vé phía Vendor (issued: Đã xuất, failed: Lỗi, initial: Chờ)."
+    semantics: [status, fulfillment_state]
+
+  source_booking:
+    data_type: varchar
+    business_name: "Nguồn đặt vé"
+    description: "Kênh thực hiện giao dịch (mobile, web, mini-app...)."
+    semantics: [channel, source]
+
+  expire_date:
+    data_type: timestamp(6)
+    business_name: "Thời gian hết hạn"
+    description: "Thời điểm đơn hàng hết hạn thanh toán (thường +10-15p)."
+    semantics: [date, expire_time]
+
+  bank_id:
+    data_type: bigint
+    business_name: "ID Ngân hàng"
+    description: "Mã định danh ngân hàng."
+    semantics: [id, bank]
+
+  bank_identity:
+    data_type: varchar
+    business_name: "Định danh khách hàng (Bank)"
+    description: "Thông tin định danh KH từ phía Bank (SĐT/User ID)."
+    semantics: [user_identity, bank]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    business_name: "Định danh khách hàng (Hash)"
+    description: "Mã hash thông tin định danh KH."
+    semantics: [user_identity, bank, hash]
+    pii: false
+
+  bank_channel_id:
+    data_type: varchar
+    business_name: "Mã kênh ngân hàng"
+    description: "Mã kênh chi tiết của ngân hàng."
+    semantics: [id, channel, bank]
+
+  # --- VENDOR FINANCIALS ---
+  vendor_seat_original_amount:
+    data_type: decimal(38,18)
+    business_name: "Tiền vé gốc (Vendor)"
+    description: "Tổng giá vé niêm yết phía Vendor."
+    semantics: [amount, currency, vendor, original]
+    unit: vnd
+
+  vendor_seat_charge_amount:
+    data_type: decimal(38,18)
+    business_name: "Tiền vé thực thu (Vendor)"
+    description: "Số tiền vé Vendor thu (đã trừ khuyến mãi Vendor)."
+    semantics: [amount, currency, vendor, charge]
+    unit: vnd
+
+  vendor_seat_discount_amount:
+    data_type: decimal(38,18)
+    business_name: "Tiền vé KM (Vendor)"
+    description: "Số tiền giảm giá vé do Vendor chịu."
+    semantics: [amount, currency, vendor, discount]
+    unit: vnd
+
+  vendor_seat_sub_amount:
+    data_type: decimal(38,18)
+    business_name: "Phụ thu vé (Vendor)"
+    description: "Phụ phí vé thu thêm."
+    semantics: [amount, currency, vendor, fee]
+    unit: vnd
+
+  vendor_seat_reconciliation_amount:
+    data_type: decimal(38,18)
+    business_name: "Đối soát vé (Vendor)"
+    description: "Số tiền dùng để đối soát vé với Vendor (= Charge + Sub)."
+    semantics: [amount, currency, vendor, reconciliation]
+    unit: vnd
+
+  vendor_con_original_amount:
+    data_type: decimal(38,18)
+    business_name: "Tiền Combo gốc"
+    description: "Giá Combo (bỏng/nước) niêm yết."
+    semantics: [amount, currency, vendor, concession]
+    unit: vnd
+
+  vendor_con_reconciliation_amount:
+    data_type: decimal(38,18)
+    business_name: "Đối soát Combo"
+    description: "Số tiền đối soát Combo với Vendor."
+    semantics: [amount, currency, vendor, concession_reconciliation]
+    unit: vnd
+
+  vendor_total_reconciliation_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng đối soát Vendor"
+    description: "Tổng tiền phải trả cho Vendor (Vé + Combo + Phụ phí)."
+    semantics: [amount, currency, vendor, total_reconciliation]
+    unit: vnd
+
+  # --- VNPAY FINANCIALS ---
+  vnpay_seat_amount:
+    data_type: decimal(38,18)
+    business_name: "Doanh thu vé (VNPAY)"
+    description: "Giá vé bán trên hệ thống VNPAY."
+    semantics: [amount, currency, vnpay, revenue]
+    unit: vnd
+
+  vnpay_concession_amount:
+    data_type: decimal(38,18)
+    business_name: "Doanh thu Combo (VNPAY)"
+    description: "Giá Combo bán trên hệ thống VNPAY."
+    semantics: [amount, currency, vnpay, revenue]
+    unit: vnd
+
+  vnpay_total_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng giá trị đơn (Gross)"
+    description: "Tổng giá trị đơn hàng trước khi trừ Promotion (= Seat + Concession + Fees)."
+    semantics: [amount, currency, vnpay, gross_revenue]
+    unit: vnd
+
+  vnpay_final_amount:
+    data_type: decimal(38,18)
+    business_name: "Khách phải trả (Net)"
+    description: "Số tiền thực tế khách hàng cần thanh toán (= Total - Promotion)."
+    semantics: [amount, currency, vnpay, net_revenue]
+    unit: vnd
+
+  # --- PROFIT & FEES (New Fields from Data) ---
+  vnpay_seat_profit:
+    data_type: decimal(38,18)
+    business_name: "Lợi nhuận vé"
+    description: "Lợi nhuận VNPAY thu được từ vé."
+    semantics: [amount, currency, profit]
+    unit: vnd
+
+  vnpay_concession_profit:
+    data_type: decimal(38,18)
+    business_name: "Lợi nhuận Combo"
+    description: "Lợi nhuận VNPAY thu được từ Combo."
+    semantics: [amount, currency, profit]
+    unit: vnd
+
+  vendor_seat_fee:
+    data_type: decimal(38,18)
+    business_name: "Phí Vendor"
+    description: "Phí trả cho Vendor."
+    semantics: [amount, currency, cost]
+    unit: vnd
+
+  vnpay_seat_fee:
+    data_type: decimal(38,18)
+    business_name: "Phí dịch vụ VNPAY"
+    description: "Phí dịch vụ thu của khách hàng."
+    semantics: [amount, currency, fee]
+    unit: vnd
+
+  # --- PROMOTION ---
+  promotion_id:
+    data_type: varchar
+    business_name: "ID Khuyến mãi"
+    description: "Mã định danh hệ thống Voucher."
+    semantics: [id, promotion]
+
+  promotion_code:
+    data_type: varchar
+    business_name: "Mã Voucher"
+    description: "Mã giảm giá khách hàng nhập."
+    semantics: [code, promotion]
+
+  promotion_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng tiền giảm giá"
+    description: "Tổng giá trị khuyến mãi được áp dụng."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vnpay_amount:
+    data_type: decimal(38,18)
+    business_name: "KM chịu bởi VNPAY"
+    description: "Phần tiền giảm giá do VNPAY gánh chịu."
+    semantics: [amount, currency, discount, cost]
+
+  promotion_vendor_amount:
+    data_type: decimal(38,18)
+    business_name: "KM chịu bởi Vendor"
+    description: "Phần tiền giảm giá do Vendor gánh chịu."
+    semantics: [amount, currency, discount]
+
+  promotion_bank_amount:
+    data_type: decimal(38,18)
+    business_name: "KM chịu bởi Bank"
+    description: "Phần tiền giảm giá do Ngân hàng gánh chịu."
+    semantics: [amount, currency, discount]
+
+  promotion_reconciliation_code:
+    data_type: varchar
+    business_name: "Mã đối soát KM"
+    description: "Mã dùng để đối soát chương trình khuyến mãi."
+    semantics: [code, reconciliation]
+
+  # --- BILLING ---
+  billing_id:
+    data_type: varchar
+    business_name: "ID Giao dịch Billing"
+    description: "Mã tham chiếu sang hệ thống thanh toán (Billing)."
+    semantics: [id, billing, reference]
+
+  billing_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền trừ Billing"
+    description: "Số tiền thực tế trừ tài khoản khách hàng."
+    semantics: [amount, currency, billing]
+    unit: vnd
+
+  billing_pay_source:
+    data_type: varchar
+    business_name: "Nguồn tiền Billing"
+    description: "Nguồn tiền thanh toán (Ví dụ: 970436 - thẻ, wallet...)."
+    semantics: [code, payment_source]
+
+  billing_status:
+    data_type: varchar
+    business_name: "Trạng thái Billing"
+    description: "Kết quả gạch nợ (00: Thành công)."
+    semantics: [status, billing]
+
+  billing_data:
+    data_type: varchar
+    business_name: "Dữ liệu Billing (Raw)"
+    description: "Dữ liệu JSON chi tiết trả về từ cổng thanh toán."
+    semantics: [data, json, raw]
+
+  # --- VENDOR INTEGRATION ---
+  vendor_booking_no:
+    data_type: varchar
+    business_name: "Mã đặt vé Vendor"
+    description: "Mã booking trả về từ hệ thống rạp (Ticket Code)."
+    semantics: [code, ticket_number]
+
+  vendor_trace_id:
+    data_type: varchar
+    business_name: "Trace ID Vendor"
+    description: "ID dùng để tra soát với hệ thống rạp (Invoice No)."
+    semantics: [id, trace]
+
+  # --- METRICS ---
+  number_of_seats:
+    data_type: integer
+    business_name: "Số lượng vé"
+    description: "Tổng số vé trong đơn hàng."
+    semantics: [metric, count]
+
+  number_of_concessions:
+    data_type: integer
+    business_name: "Số lượng Combo"
+    description: "Tổng số combo trong đơn hàng."
+    semantics: [metric, count]
+
+  # --- SYSTEM ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo đơn"
+    description: "Thời điểm khách hàng khởi tạo đơn hàng."
+    semantics: [date, created_time]
+
+  issued_date:
+    data_type: timestamp(6)
+    business_name: "Ngày xuất vé"
+    description: "Thời điểm vé được xuất thành công từ Vendor."
+    semantics: [date, issued_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo đơn (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+      - bank_identity
+
+sample_questions:
+  - "Doanh thu (vnpay_final_amount) ngày hôm qua là bao nhiêu?"
+  - "Tỷ lệ đơn hàng thành công (status=payment) so với tổng đơn?"
+  - "Top 5 ngân hàng (bank_id) có lượng giao dịch cao nhất?"
+  - "Tổng số tiền khuyến mãi (promotion_amount) đã chi trong tháng?"
+  - "Lợi nhuận từ vé (vnpay_seat_profit) theo từng nguồn đặt (source_booking)?"
+
+sample_queries:
+  - description: "Báo cáo doanh thu và lợi nhuận theo ngày"
+    sql: |
+      SELECT
+        date_trunc('day', created_date) as report_date,
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN status = 'payment' THEN 1 ELSE 0 END) as success_orders,
+        SUM(CASE WHEN status = 'payment' THEN vnpay_final_amount ELSE 0 END) as revenue,
+        SUM(CASE WHEN status = 'payment' THEN vnpay_seat_profit + vnpay_concession_profit ELSE 0 END) as total_profit
+      FROM lakehouse.lh_vnfilm_v2.orders
+      WHERE created_date >= date_trunc('month', current_date)
+      GROUP BY 1
+      ORDER BY 1 DESC
+
+  - description: "Thống kê lỗi xuất vé (Payment Success nhưng Issue Failed)"
+    sql: |
+      SELECT
+        pay_code,
+        created_date,
+        vendor_booking_no,
+        billing_pay_source
+      FROM lakehouse.lh_vnfilm_v2.orders
+      WHERE status = 'payment'
+        AND issue_status != 'issued'
+        AND created_date >= date_trunc('day', current_date) - interval '7' day
+      ORDER BY created_date DESC

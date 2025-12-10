@@ -5,12 +5,12 @@ domain: vnfilm_ticketing
 
 table_type: dim_extension
 business_name: "Bảng mở rộng đơn hàng theo phim/rạp/suất chiếu (order_film)"
-grain: "1 dòng = 1 đơn hàng (khóa id trùng với orders.id), snapshot thông tin phim, rạp, suất chiếu, vendor"
+grain: "1 dòng = 1 đơn hàng (khóa id trùng với orders.id), snapshot thông tin phim, rạp, suất chiếu, vendor tại thời điểm đặt vé."
 
 description: >
-  Bảng order_film là bảng mở rộng cho orders, phục vụ phân tích theo phim, rạp, địa điểm, suất chiếu và vendor.
-  Chứa các thuộc tính phim (tên, thể loại, quốc gia, đạo diễn/diễn viên, thời lượng, ngôn ngữ, PG rating, độ tuổi),
-  thông tin rạp (tên/địa chỉ), thông tin suất chiếu (thời gian/loại/phiên bản) và các mã định danh phía vendor.
+  Bảng order_film là bảng mở rộng (extension) cho bảng orders.
+  Lưu trữ chi tiết các thông tin về phim, rạp, suất chiếu, phòng chiếu và vendor liên quan đến đơn hàng đó.
+  Dữ liệu được snapshot tại thời điểm giao dịch để đảm bảo tính lịch sử (ví dụ: tên phim hoặc giờ chiếu thay đổi sau này không ảnh hưởng đến đơn hàng cũ).
 
 tags:
   - dim_extension
@@ -35,7 +35,13 @@ foreign_keys:
     references_table: "lakehouse.lh_vnfilm_v2.vendor"
     references_column: "id"
     relation: "many_to_one"
-    description: "Join sang bảng vendor để lấy thông tin vendor chuẩn (order_film.vendor_id = vendor.id)."
+    description: "Join sang bảng vendor (order_film.vendor_id = vendor.id)."
+
+  - column: location_id
+    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng location (nếu cần lấy thông tin địa lý chuẩn hóa)."
 
 time_columns:
   - film_publish_date
@@ -45,268 +51,306 @@ time_columns:
 
 recommended_filters:
   - "session_time cho lọc theo thời gian suất chiếu"
-  - "film_category, film_country, film_language, film_pg_rating cho phân tích theo thuộc tính phim"
+  - "film_category, film_country, film_language cho phân tích theo thuộc tính phim"
   - "cinema_id hoặc cinema_name_vi cho phân tích theo rạp"
-  - "vendor_id cho phân tích theo vendor"
-  - "created_by_hash cho lọc theo người dùng (áp RLS nếu cần)"
+  - "vendor_id cho phân tích theo đối tác (vendor)"
 
 concepts:
   - name: order
-    synonyms: ["đơn", "đơn hàng", "order", "giao dịch"]
-
+    synonyms: ["đơn", "đơn hàng", "booking"]
   - name: film
-    synonyms: ["phim", "movie", "film"]
-
+    synonyms: ["phim", "movie"]
   - name: cinema
-    synonyms: ["rạp", "cinema", "theater", "cụm rạp"]
-
+    synonyms: ["rạp", "cụm rạp", "theater"]
   - name: session
-    synonyms: ["suất chiếu", "showtime", "session"]
-
+    synonyms: ["suất chiếu", "showtime"]
   - name: vendor
-    synonyms: ["đối tác", "nhà cung cấp", "merchant", "vendor"]
-
-  - name: content_assets
-    synonyms: ["poster", "banner", "trailer", "ảnh phim", "video trailer"]
+    synonyms: ["đối tác", "merchant"]
 
 columns:
   id:
     data_type: bigint
     business_name: "ID đơn hàng"
-    description: "Khóa liên kết 1-1 sang orders.id."
+    description: "ID định danh bản ghi - Mapping 1-1 với bảng ORDER."
     semantics: [id, primary, order, join_key]
     pii: false
 
   cinema_id:
     data_type: bigint
-    description: "ID rạp."
+    business_name: "ID rạp"
+    description: "Mã định danh rạp (Cinema)."
     semantics: [id, cinema]
     pii: false
 
   cinema_name_vi:
     data_type: varchar
-    description: "Tên rạp (tiếng Việt)."
+    business_name: "Tên rạp (VI)"
+    description: "Tên rạp hiển thị tiếng Việt."
     semantics: [name, cinema, vi]
 
   cinema_name_en:
     data_type: varchar
-    description: "Tên rạp (tiếng Anh)."
+    business_name: "Tên rạp (EN)"
+    description: "Tên rạp hiển thị tiếng Anh."
     semantics: [name, cinema, en]
 
   cinema_address:
     data_type: varchar
-    description: "Địa chỉ rạp."
+    business_name: "Địa chỉ rạp"
+    description: "Địa chỉ chi tiết của rạp."
     semantics: [address, cinema]
 
   film_id:
     data_type: bigint
-    description: "ID phim."
+    business_name: "ID phim"
+    description: "Mã định danh phim (Film)."
     semantics: [id, film]
     pii: false
 
   film_name_vi:
     data_type: varchar
-    description: "Tên phim (tiếng Việt)."
+    business_name: "Tên phim (VI)"
+    description: "Tên phim tiếng Việt."
     semantics: [name, film, vi]
 
   film_name_en:
     data_type: varchar
-    description: "Tên phim (tiếng Anh)."
+    business_name: "Tên phim (EN)"
+    description: "Tên phim tiếng Anh."
     semantics: [name, film, en]
 
   film_trailer_url:
     data_type: varchar
-    description: "URL trailer phim."
+    business_name: "URL Trailer"
+    description: "Link trailer phim."
     semantics: [url, film, trailer]
 
   film_poster_url:
     data_type: varchar
-    description: "URL poster phim."
+    business_name: "URL Poster"
+    description: "Link poster phim."
     semantics: [url, film, poster]
 
   film_banner_url:
     data_type: varchar
-    description: "URL banner phim."
+    business_name: "URL Banner"
+    description: "Link banner phim."
     semantics: [url, film, banner]
 
   film_country:
     data_type: varchar
-    description: "Quốc gia phim."
+    business_name: "Quốc gia phim"
+    description: "Quốc gia sản xuất phim."
     semantics: [category, film, country]
 
   film_category:
     data_type: varchar
-    description: "Thể loại phim."
+    business_name: "Thể loại phim"
+    description: "Thể loại phim (Hành động, Tình cảm, Kinh dị...)."
     semantics: [category, film, genre]
 
   director:
     data_type: varchar
-    description: "Đạo diễn."
+    business_name: "Đạo diễn"
+    description: "Tên đạo diễn."
     semantics: [person, film, director]
 
   actors:
     data_type: varchar
-    description: "Danh sách diễn viên (raw/text)."
+    business_name: "Diễn viên"
+    description: "Danh sách diễn viên tham gia."
     semantics: [person, film, actors]
 
   film_duration:
     data_type: integer
+    business_name: "Thời lượng phim"
     description: "Thời lượng phim (phút)."
     semantics: [duration, film]
     unit: minute
 
   film_language:
     data_type: varchar
-    description: "Ngôn ngữ phim."
+    business_name: "Ngôn ngữ phim"
+    description: "Ngôn ngữ gốc của phim."
     semantics: [category, film, language]
 
   film_description_vi:
     data_type: varchar
-    description: "Mô tả phim (VI)."
+    business_name: "Mô tả phim (VI)"
+    description: "Nội dung giới thiệu phim tiếng Việt."
     semantics: [text, film, description, vi]
 
   film_description_en:
     data_type: varchar
-    description: "Mô tả phim (EN)."
+    business_name: "Mô tả phim (EN)"
+    description: "Nội dung giới thiệu phim tiếng Anh."
     semantics: [text, film, description, en]
 
   film_publish_date:
     data_type: timestamp(6)
-    description: "Ngày phát hành phim."
+    business_name: "Ngày khởi chiếu"
+    description: "Thời gian công chiếu phim."
     semantics: [date, film, publish_time]
 
   film_pg_rating:
     data_type: varchar
-    description: "Phân loại độ tuổi/PG rating."
+    business_name: "Nhãn dán độ tuổi"
+    description: "Xếp hạng nhãn phim (C18, P, T16...)."
     semantics: [category, film, rating]
 
   film_age:
     data_type: decimal(38,18)
-    description: "Độ tuổi yêu cầu/khuyến nghị theo dữ liệu nguồn."
+    business_name: "Độ tuổi quy định"
+    description: "Giới hạn độ tuổi (con số cụ thể)."
     semantics: [age, film, rating]
 
   location_id:
     data_type: bigint
-    description: "ID địa điểm/khu vực (nếu có mapping)."
+    business_name: "ID địa điểm"
+    description: "Mã định danh Location (Tỉnh/Thành phố)."
     semantics: [id, location]
     pii: false
 
   session_id:
     data_type: bigint
-    description: "ID suất chiếu."
+    business_name: "ID suất chiếu"
+    description: "Mã định danh suất chiếu."
     semantics: [id, session]
     pii: false
 
   session_type:
     data_type: varchar
-    description: "Loại suất chiếu (2D/3D/IMAX... nếu có)."
+    business_name: "Loại suất chiếu"
+    description: "Loại suất (ví dụ: nowShowing, sneakShow)."
     semantics: [category, session, type]
 
   session_dimension:
     data_type: varchar
-    description: "Thuộc tính/định dạng suất chiếu (dimension)."
+    business_name: "Định dạng suất chiếu"
+    description: "Định dạng chiếu (2D, 3D, IMAX...)."
     semantics: [category, session, dimension]
 
   session_time:
     data_type: timestamp(6)
-    description: "Thời điểm chiếu."
+    business_name: "Giờ chiếu"
+    description: "Thời gian bắt đầu suất chiếu."
     semantics: [date, session, show_time]
 
   session_version:
     data_type: varchar
-    description: "Phiên bản suất chiếu (raw)."
+    business_name: "Phiên bản suất chiếu"
+    description: "Phiên bản (ví dụ: subtitling, dubbing)."
     semantics: [version, session]
 
   session_version_type:
     data_type: varchar
-    description: "Loại phiên bản suất chiếu."
+    business_name: "Mã loại phiên bản"
+    description: "Mã kỹ thuật phiên bản (VER_2D_SUB, VER_2D_DUB...)."
     semantics: [category, session, version_type]
 
   vendor_id:
     data_type: bigint
-    description: "ID vendor, join sang vendor.id."
+    business_name: "ID Vendor"
+    description: "Mã định danh Vendor (Đối tác)."
     semantics: [id, vendor, join_key]
     pii: false
 
   vendor_name:
     data_type: varchar
-    description: "Tên vendor (VI)."
+    business_name: "Tên Vendor (VI)"
+    description: "Tên vendor tiếng Việt."
     semantics: [name, vendor, vi]
 
   vendor_name_en:
     data_type: varchar
-    description: "Tên vendor (EN)."
+    business_name: "Tên Vendor (EN)"
+    description: "Tên vendor tiếng Anh (thường giống tên Việt hoặc null)."
     semantics: [name, vendor, en]
 
   vendor_cinema_id:
     data_type: varchar
-    description: "Mã rạp phía vendor."
+    business_name: "Mã rạp (Vendor)"
+    description: "Mã định danh rạp phía hệ thống vendor."
     semantics: [id, vendor, cinema, external_id]
 
   vendor_film_id:
     data_type: varchar
-    description: "Mã phim phía vendor."
+    business_name: "Mã phim (Vendor)"
+    description: "Mã định danh phim phía hệ thống vendor."
     semantics: [id, vendor, film, external_id]
 
   vendor_film_name_vi:
     data_type: varchar
-    description: "Tên phim phía vendor (VI)."
+    business_name: "Tên phim Vendor (VI)"
+    description: "Tên phim theo hệ thống vendor (VI)."
     semantics: [name, vendor, film, vi]
 
   vendor_film_name_en:
     data_type: varchar
-    description: "Tên phim phía vendor (EN)."
+    business_name: "Tên phim Vendor (EN)"
+    description: "Tên phim theo hệ thống vendor (EN)."
     semantics: [name, vendor, film, en]
 
   vendor_session_id:
     data_type: varchar
-    description: "Mã suất chiếu phía vendor."
+    business_name: "Mã suất chiếu (Vendor)"
+    description: "Mã định danh suất chiếu phía hệ thống vendor."
     semantics: [id, vendor, session, external_id]
 
   vendor_room_id:
     data_type: varchar
-    description: "Mã phòng chiếu phía vendor."
+    business_name: "Mã phòng chiếu (Vendor)"
+    description: "Mã định danh phòng chiếu phía hệ thống vendor."
     semantics: [id, vendor, room, external_id]
 
   vendor_room_name_vi:
     data_type: varchar
-    description: "Tên phòng chiếu phía vendor (VI)."
+    business_name: "Tên phòng chiếu (VI)"
+    description: "Tên phòng chiếu phía vendor (tiếng Việt)."
     semantics: [name, vendor, room, vi]
 
   vendor_room_name_en:
     data_type: varchar
-    description: "Tên phòng chiếu phía vendor (EN)."
+    business_name: "Tên phòng chiếu (EN)"
+    description: "Tên phòng chiếu phía vendor (tiếng Anh)."
     semantics: [name, vendor, room, en]
 
   created_date:
     data_type: timestamp(6)
-    description: "Thời điểm tạo bản ghi."
+    business_name: "Ngày tạo"
+    description: "Thời điểm bản ghi được tạo trong hệ thống."
     semantics: [date, created_time]
 
   modified_date:
     data_type: timestamp(6)
-    description: "Thời điểm cập nhật bản ghi."
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm bản ghi được cập nhật lần cuối."
     semantics: [date, modified_time]
 
   modified_by:
     data_type: varchar
-    description: "User/service cập nhật."
+    business_name: "Người cập nhật"
+    description: "User hoặc Service thực hiện cập nhật."
+    semantics: [user_identity, modifier]
 
   language:
     data_type: varchar
-    description: "Ngôn ngữ bản ghi (nếu có)."
+    business_name: "Ngôn ngữ hệ thống"
+    description: "Ngôn ngữ của bản ghi (thường là 'vi' hoặc null)."
     semantics: [language]
 
   created_by:
     data_type: varchar
-    description: "Người tạo (raw)."
+    business_name: "Người tạo"
+    description: "User hoặc Service tạo bản ghi (raw)."
     semantics: [user_identity, creator, raw]
     pii: true
     sensitive: true
 
   created_by_hash:
     data_type: varchar
-    description: "Người tạo (hash) - dùng RLS nếu cần."
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash của người tạo (dùng cho RLS/bảo mật)."
     semantics: [user_identity, creator, hash]
     pii: false
     sensitive: true
@@ -345,7 +389,7 @@ sample_queries:
       WHERE o.created_date >= date_trunc('day', current_date) - interval '29' day
       GROUP BY 1
       ORDER BY total_revenue DESC
-      LIMIT 10;
+      LIMIT 10
 
   - description: "Số vé bán theo rạp theo tuần (join orders + order_film)"
     sql: |
@@ -359,18 +403,4 @@ sample_queries:
       WHERE o.created_date >= date_trunc('week', current_date) - interval '8' week
       GROUP BY 1, 2
       ORDER BY week DESC, total_seats DESC
-      LIMIT 200;
-
-  - description: "Phân bố đơn theo thể loại phim và khung giờ chiếu trong 30 ngày"
-    sql: |
-      SELECT
-        f.film_category,
-        date_trunc('hour', f.session_time) AS hour_bucket,
-        COUNT(*) AS total_orders
-      FROM lakehouse.lh_vnfilm_v2.order_film f
-      JOIN lakehouse.lh_vnfilm_v2.orders o
-        ON f.id = o.id
-      WHERE f.session_time >= date_trunc('day', current_date) - interval '29' day
-      GROUP BY 1, 2
-      ORDER BY total_orders DESC
-      LIMIT 200;
+      LIMIT 200

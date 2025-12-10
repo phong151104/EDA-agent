@@ -1,0 +1,233 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: pre_order_seat
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng chi tiết ghế đặt trước (Pre-Order Seat)"
+grain: "1 dòng = 1 ghế đang được giữ trong phiên đặt vé (chưa thanh toán)."
+
+description: >
+  Bảng pre_order_seat lưu trữ chi tiết từng ghế mà khách hàng đã chọn trong phiên giao dịch (gắn với pre_order_id).
+  Bảng này chứa thông tin về loại ghế, giá vé niêm yết (Vendor/VNPAY) và các thông tin khuyến mãi (Campaign/Promotion) 
+  được áp dụng tạm tính cho từng ghế trước khi thanh toán.
+
+tags:
+  - fact
+  - pre_order
+  - seat
+  - ticket_cart
+  - pricing
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: pre_order_id
+    references_table: "lakehouse.lh_vnfilm_v2.pre_order"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng pre_order để lấy context phiên giao dịch."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign (nếu có)."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "vendor_seat_type để phân tích nhu cầu loại ghế (VIP/Standard)"
+  - "created_date để dọn dẹp dữ liệu cũ (TTL)"
+  - "campaign_code để kiểm tra việc áp mã khuyến mãi lên ghế"
+
+concepts:
+  - name: seat
+    synonyms: ["ghế", "chỗ ngồi", "ticket"]
+  - name: holding
+    synonyms: ["giữ chỗ", "locking"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của ghế đặt trước."
+    semantics: [id, primary]
+    pii: false
+
+  pre_order_id:
+    data_type: bigint
+    business_name: "ID Pre-Order"
+    description: "Mã định danh phiên giao dịch đặt trước."
+    semantics: [id, pre_order, foreign_key]
+
+  # --- VENDOR SEAT INFO ---
+  vendor_seat_id:
+    data_type: varchar
+    business_name: "Mã ghế (Vendor)"
+    description: "Mã định danh ghế phía hệ thống Vendor."
+    semantics: [id, vendor, external_id]
+
+  vendor_seat_type:
+    data_type: varchar
+    business_name: "Loại ghế (Vendor)"
+    description: "Loại ghế phía Vendor (VIP, Standard, Couple...)."
+    semantics: [category, seat_type, vendor]
+
+  vendor_seat_name:
+    data_type: varchar
+    business_name: "Tên ghế"
+    description: "Số ghế hiển thị (A12, E17...)."
+    semantics: [name, seat_number]
+
+  vendor_additional_data:
+    data_type: varchar
+    business_name: "Dữ liệu bổ sung (Vendor)"
+    description: "Metadata khác từ vendor."
+    semantics: [text, metadata]
+
+  # --- PRICING ---
+  vendor_seat_price:
+    data_type: decimal(38,18)
+    business_name: "Giá vé Vendor"
+    description: "Giá vé niêm yết từ Vendor."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  vendor_discount_price:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá Vendor (Gốc)"
+    description: "Số tiền Vendor giảm giá trực tiếp (nếu có)."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  vnpay_seat_type:
+    data_type: varchar
+    business_name: "Loại ghế (VNPAY)"
+    description: "Loại ghế đã được chuẩn hóa trên VNPAY."
+    semantics: [category, seat_type, internal]
+
+  vnpay_seat_price:
+    data_type: decimal(38,18)
+    business_name: "Giá vé VNPAY"
+    description: "Giá vé hiển thị trên ứng dụng VNPAY."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  # --- CAMPAIGN & PROMOTION ---
+  campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch"
+    description: "Mã chiến dịch khuyến mãi."
+    semantics: [id, campaign]
+
+  sub_campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch con"
+    description: "Mã chiến dịch con."
+    semantics: [id, campaign, sub]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã Campaign"
+    description: "Mã code chiến dịch."
+    semantics: [code, campaign]
+
+  campaign_type:
+    data_type: varchar
+    business_name: "Loại Campaign"
+    description: "Loại hình chiến dịch."
+    semantics: [category, campaign_type]
+
+  campaign_vendor_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Campaign (Vendor)"
+    description: "Số tiền khuyến mãi campaign do Vendor chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  campaign_vnpay_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Campaign (VNPAY)"
+    description: "Số tiền khuyến mãi campaign do VNPAY chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vendor_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Promotion (Vendor)"
+    description: "Số tiền giảm giá promotion do Vendor chịu (Discount Unit)."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vnpay_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Promotion (VNPAY)"
+    description: "Số tiền giảm giá promotion do VNPAY chịu (Discount Unit)."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vendor_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng Promo (Vendor)"
+    description: "Tổng tiền Vendor tài trợ promotion cho ghế này."
+    semantics: [amount, currency, promotion]
+    unit: vnd
+
+  promotion_vnpay_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng Promo (VNPAY)"
+    description: "Tổng tiền VNPAY tài trợ promotion cho ghế này."
+    semantics: [amount, currency, promotion]
+    unit: vnd
+
+  # --- SYSTEM ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm ghế được thêm vào phiên đặt vé."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Tỷ lệ ghế VIP so với ghế thường được chọn trong các phiên đặt trước?"
+  - "Kiểm tra giá vé (vnpay_seat_price) của các ghế đang được giữ?"
+  - "Có bao nhiêu ghế đang được áp dụng mã giảm giá?"
+
+sample_queries:
+  - description: "Thống kê loại ghế đang được chọn nhiều nhất (Pre-order)"
+    sql: |
+      SELECT
+        vendor_seat_type,
+        COUNT(*) as total_selected
+      FROM lakehouse.lh_vnfilm_v2.pre_order_seat
+      WHERE created_date >= date_trunc('day', current_date)
+      GROUP BY 1
+      ORDER BY 2 DESC

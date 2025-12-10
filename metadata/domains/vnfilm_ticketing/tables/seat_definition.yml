@@ -1,0 +1,144 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: seat_definition
+domain: vnfilm_ticketing
+
+table_type: dimension
+business_name: "Bảng định nghĩa loại ghế chuẩn (Seat Definition)"
+grain: "1 dòng = 1 loại ghế chuẩn hóa (Standardized Seat Type)."
+
+description: >
+  Bảng seat_definition là bảng danh mục (Master Data) dùng để chuẩn hóa các loại ghế từ nhiều Vendor khác nhau về một chuẩn chung của VNPAY.
+  Bảng chứa thông tin hiển thị (tên, màu sắc, icon) và mã loại ghế (type) để hệ thống frontend hiển thị sơ đồ ghế (Seat Map) thống nhất.
+
+tags:
+  - dim
+  - master_data
+  - seat_type
+  - configuration
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys: []
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status = 'active' để lấy danh sách loại ghế đang sử dụng"
+  - "type để map với dữ liệu từ bảng pre_order_seat hoặc order_seat"
+
+concepts:
+  - name: seat_standard
+    synonyms: ["loại ghế chuẩn", "standard seat", "seat config"]
+  - name: color_code
+    synonyms: ["màu ghế", "mã màu", "hex code"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của loại ghế chuẩn."
+    semantics: [id, primary]
+    pii: false
+
+  name_vi:
+    data_type: varchar
+    business_name: "Tên ghế (VI)"
+    description: "Tên hiển thị tiếng Việt (Ví dụ: Thường, VIP, Ghế đôi)."
+    semantics: [name, seat_type, vi]
+
+  name_en:
+    data_type: varchar
+    business_name: "Tên ghế (EN)"
+    description: "Tên hiển thị tiếng Anh (Ví dụ: Normal, VIP, Couple)."
+    semantics: [name, seat_type, en]
+
+  icon:
+    data_type: varchar
+    business_name: "Icon ghế"
+    description: "Đường dẫn hoặc mã icon hiển thị trên App."
+    semantics: [url, icon, ui_element]
+
+  color_code:
+    data_type: varchar
+    business_name: "Mã màu (Hex)"
+    description: "Mã màu hiển thị trên sơ đồ ghế (Ví dụ: #05CE91)."
+    semantics: [code, color, ui_element]
+
+  type:
+    data_type: varchar
+    business_name: "Mã loại ghế (System)"
+    description: >
+      Mã kỹ thuật dùng để phân loại logic (way, normal, vip, couple, deluxe, sofa, bed, sweetBox, fourDX...).
+      Dùng để mapping logic giá và hiển thị.
+    semantics: [category, seat_type, system_code]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái"
+    description: "Trạng thái sử dụng (active: Hoạt động, inactive: Tạm dừng)."
+    semantics: [status, active_state]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm tạo định nghĩa ghế."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật thông tin lần cuối."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User hệ thống cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Mã màu (color_code) của ghế VIP là gì?"
+  - "Danh sách tất cả các loại ghế đang hoạt động (active)?"
+  - "Có bao nhiêu loại ghế đặc biệt (4DX, Sofa, Bed) được hỗ trợ?"
+
+sample_queries:
+  - description: "Lấy danh sách các loại ghế và màu sắc hiển thị tương ứng"
+    sql: |
+      SELECT
+        type,
+        name_vi,
+        color_code
+      FROM lakehouse.lh_vnfilm_v2.seat_definition
+      WHERE status = 'active'
+      ORDER BY id
+      

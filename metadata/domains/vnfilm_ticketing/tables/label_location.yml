@@ -112,7 +112,7 @@ sample_queries:
         COUNT(*) AS total_locations
       FROM lakehouse.lh_vnfilm_v2.label_location
       GROUP BY label_id
-      ORDER BY total_locations DESC;
+      ORDER BY total_locations DESC
 
   - description: "Danh sách label gán cho một location"
     sql: |
@@ -122,4 +122,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.label_location ll
       WHERE ll.location_id = :location_id
       ORDER BY ll.label_id
-      LIMIT 200;
+      LIMIT 200

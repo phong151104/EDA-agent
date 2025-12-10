@@ -203,7 +203,7 @@ sample_queries:
         AND (active_from_date IS NULL OR active_from_date <= now())
         AND (active_to_date IS NULL OR active_to_date >= now())
       ORDER BY display_order
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Label theo vendor"
     sql: |
@@ -215,4 +215,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.labels
       WHERE vendor_id = 123
       ORDER BY display_order
-      LIMIT 200;
+      LIMIT 200

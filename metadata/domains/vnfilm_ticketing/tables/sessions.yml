@@ -1,0 +1,235 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: sessions
+domain: vnfilm_ticketing
+
+table_type: dimension
+business_name: "Bảng danh sách suất chiếu (Sessions)"
+grain: "1 dòng = 1 suất chiếu cụ thể tại một rạp, một khung giờ."
+
+description: >
+  Bảng sessions lưu trữ thông tin chi tiết về các suất chiếu phim.
+  Bao gồm thông tin về thời gian chiếu, định dạng chiếu (2D/3D/IMAX), ngôn ngữ (Sub/Dub),
+  phòng chiếu và trạng thái hoạt động của suất chiếu đó.
+
+tags:
+  - dim
+  - session
+  - showtime
+  - schedule
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: cinema_id
+    references_table: "lakehouse.lh_vnfilm_v2.cinema"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng cinema."
+
+  - column: film_id
+    references_table: "lakehouse.lh_vnfilm_v2.film"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng film."
+
+  - column: location_id
+    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng location."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng vendor."
+
+time_columns:
+  - session_time
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "session_time >= current_timestamp để lấy các suất chiếu sắp tới"
+  - "status = 'active' để lọc suất chiếu đang mở bán"
+  - "location_id để lọc suất chiếu theo tỉnh/thành"
+  - "session_dimension để lọc theo định dạng (2D/3D)"
+
+concepts:
+  - name: showtime
+    synonyms: ["suất chiếu", "giờ chiếu", "lịch chiếu"]
+  - name: format
+    synonyms: ["định dạng", "version", "2D", "3D", "IMAX"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID Suất chiếu"
+    description: "Mã định danh duy nhất của suất chiếu."
+    semantics: [id, primary]
+    pii: false
+
+  session_time:
+    data_type: timestamp(6)
+    business_name: "Giờ chiếu"
+    description: "Thời gian bắt đầu chiếu."
+    semantics: [date, show_time]
+
+  # --- SESSION FORMAT & VERSION ---
+  session_version:
+    data_type: varchar
+    business_name: "Phiên bản (Sub/Dub)"
+    description: "Loại phiên bản (subtitling: Phụ đề, dubbing: Lồng tiếng)."
+    semantics: [category, language_type]
+
+  session_dimension:
+    data_type: varchar
+    business_name: "Định dạng (2D/3D)"
+    description: "Định dạng hình ảnh (Film2D, Film3D, IMAX...)."
+    semantics: [category, dimension]
+
+  version_type:
+    data_type: varchar
+    business_name: "Mã phiên bản chi tiết"
+    description: "Mã kỹ thuật chi tiết (VER_2D_SUB, VER_IMAX_3D...)."
+    semantics: [code, version_detail]
+
+  session_type:
+    data_type: varchar
+    business_name: "Loại suất chiếu"
+    description: "Phân loại suất (nowShowing: Đang chiếu, sneakShow: Chiếu sớm)."
+    semantics: [category, show_type]
+
+  # --- VENDOR MAPPING ---
+  vendor_id:
+    data_type: bigint
+    business_name: "ID Vendor"
+    description: "Mã định danh đối tác cung cấp suất chiếu."
+    semantics: [id, vendor]
+
+  vendor_session_id:
+    data_type: varchar
+    business_name: "ID Suất chiếu (Vendor)"
+    description: "Mã suất chiếu phía hệ thống Vendor."
+    semantics: [id, vendor, external_id]
+
+  vendor_film_id:
+    data_type: varchar
+    business_name: "ID Phim (Vendor)"
+    description: "Mã phim phía hệ thống Vendor."
+    semantics: [id, vendor, film]
+
+  vendor_cinema_id:
+    data_type: varchar
+    business_name: "ID Rạp (Vendor)"
+    description: "Mã rạp phía hệ thống Vendor."
+    semantics: [id, vendor, cinema]
+
+  vendor_room_id:
+    data_type: varchar
+    business_name: "ID Phòng chiếu (Vendor)"
+    description: "Mã phòng chiếu phía hệ thống Vendor."
+    semantics: [id, vendor, room]
+
+  vendor_room_name_vi:
+    data_type: varchar
+    business_name: "Tên phòng chiếu (VI)"
+    description: "Tên phòng chiếu tiếng Việt."
+    semantics: [name, room, vi]
+
+  vendor_room_name_en:
+    data_type: varchar
+    business_name: "Tên phòng chiếu (EN)"
+    description: "Tên phòng chiếu tiếng Anh."
+    semantics: [name, room, en]
+
+  # --- RELATIONS ---
+  film_id:
+    data_type: bigint
+    business_name: "ID Phim"
+    description: "Mã định danh phim."
+    semantics: [id, film]
+
+  cinema_id:
+    data_type: bigint
+    business_name: "ID Rạp"
+    description: "Mã định danh rạp."
+    semantics: [id, cinema]
+
+  location_id:
+    data_type: bigint
+    business_name: "ID Địa điểm"
+    description: "Mã định danh tỉnh/thành phố."
+    semantics: [id, location]
+
+  # --- SYSTEM STATUS ---
+  status:
+    data_type: varchar
+    business_name: "Trạng thái"
+    description: "Trạng thái hoạt động (active, inactive)."
+    semantics: [status, active_state]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm tạo suất chiếu trên hệ thống."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật thông tin suất chiếu."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User hệ thống cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "session_time"
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Tìm các suất chiếu phim Zootopia 2 tại Hà Nội ngày mai?"
+  - "Có bao nhiêu suất chiếu IMAX trong tuần này?"
+  - "Danh sách suất chiếu đang hoạt động (active) của rạp CGV?"
+
+sample_queries:
+  - description: "Lấy danh sách suất chiếu phim theo ngày và địa điểm"
+    sql: |
+      SELECT
+        s.session_time,
+        s.vendor_room_name_vi,
+        s.version_type
+      FROM lakehouse.lh_vnfilm_v2.sessions s
+      WHERE s.film_id = 12345 -- ID phim cụ thể
+        AND s.location_id = 1 -- Hà Nội
+        AND s.session_time >= date_trunc('day', current_date) + interval '1' day
+        AND s.session_time < date_trunc('day', current_date) + interval '2' day
+      ORDER BY s.session_time

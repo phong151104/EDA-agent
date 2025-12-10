@@ -198,7 +198,7 @@ sample_queries:
       SELECT COUNT(*) AS failed_notifications
       FROM lakehouse.lh_vnfilm_v2.notify_ott
       WHERE status = 'FAIL'
-        AND created_date >= now() - interval '1 day';
+        AND created_date >= now() - interval '1 day'
 
   - description: "Thống kê số OTT notification theo loại"
     sql: |
@@ -207,7 +207,7 @@ sample_queries:
         COUNT(*) AS total_notifications
       FROM lakehouse.lh_vnfilm_v2.notify_ott
       GROUP BY type
-      ORDER BY total_notifications DESC;
+      ORDER BY total_notifications DESC
 
   - description: "Lịch sử OTT notification của một đơn hàng"
     sql: |
@@ -219,4 +219,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.notify_ott
       WHERE order_id = :order_id
       ORDER BY created_date DESC
-      LIMIT 200;
+      LIMIT 200

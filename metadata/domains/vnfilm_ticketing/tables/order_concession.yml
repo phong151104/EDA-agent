@@ -1,0 +1,295 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: order_concession
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng chi tiết Combo/Bắp nước đơn hàng (Order Concession)"
+grain: "1 dòng = 1 loại combo trong một đơn hàng đã đặt."
+
+description: >
+  Bảng order_concession lưu trữ chi tiết các món bắp nước (Concession) gắn liền với một đơn hàng thành công (order_id).
+  Bảng chứa thông tin về số lượng, giá bán, giá đối soát, các loại phí (vendor_sub_fee) và chi tiết phân bổ khuyến mãi 
+  (giữa Vendor và VNPAY) cho từng món hàng.
+
+tags:
+  - fact
+  - concession
+  - combo
+  - revenue
+  - order_detail
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: order_id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng orders để lấy thông tin đơn hàng tổng."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign (nếu có áp dụng)."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "vendor_concession_name để thống kê món bán chạy nhất"
+  - "vnpay_profit > 0 để xem lợi nhuận từ mảng bắp nước"
+  - "created_date để báo cáo doanh thu theo ngày"
+
+concepts:
+  - name: concession_revenue
+    synonyms: ["doanh thu combo", "doanh thu bắp nước"]
+  - name: profit
+    synonyms: ["lợi nhuận", "lãi gộp"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của dòng chi tiết combo."
+    semantics: [id, primary]
+    pii: false
+
+  name:
+    data_type: varchar
+    business_name: "Tên hiển thị"
+    description: "Tên combo hiển thị trên hóa đơn (VD: MY COMBO)."
+    semantics: [name, product]
+
+  order_id:
+    data_type: bigint
+    business_name: "ID Đơn hàng"
+    description: "Mã đơn hàng chứa combo này."
+    semantics: [id, order, foreign_key]
+
+  quantity:
+    data_type: decimal(38,18)
+    business_name: "Số lượng"
+    description: "Số lượng combo khách hàng đã mua."
+    semantics: [metric, quantity]
+
+  # --- VENDOR PRODUCT INFO ---
+  vendor_concession_id:
+    data_type: varchar
+    business_name: "Mã Combo (Vendor)"
+    description: "Mã định danh sản phẩm phía Vendor."
+    semantics: [id, vendor, product]
+
+  vendor_concession_type:
+    data_type: varchar
+    business_name: "Loại Combo"
+    description: "Mã loại sản phẩm (VD: 103793)."
+    semantics: [category, product_type]
+
+  vendor_concession_name:
+    data_type: varchar
+    business_name: "Tên Combo (Vendor)"
+    description: "Tên sản phẩm theo hệ thống Vendor."
+    semantics: [name, product, vendor]
+
+  vendor_concession_description:
+    data_type: varchar
+    business_name: "Mô tả chi tiết"
+    description: "Mô tả thành phần combo (Bắp, Nước, Size...)."
+    semantics: [text, description]
+
+  vendor_concession_image:
+    data_type: varchar
+    business_name: "Hình ảnh"
+    description: "URL hình ảnh sản phẩm."
+    semantics: [url, image]
+
+  vendor_additional_data:
+    data_type: varchar
+    business_name: "Dữ liệu bổ sung"
+    description: "Metadata từ vendor."
+    semantics: [text, metadata]
+
+  # --- VENDOR PRICING & FEES ---
+  vendor_concession_price:
+    data_type: decimal(38,18)
+    business_name: "Giá Vendor"
+    description: "Giá niêm yết từ Vendor."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  vendor_discount_price:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá Vendor"
+    description: "Số tiền Vendor giảm giá gốc."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  vendor_sub_fee:
+    data_type: decimal(38,18)
+    business_name: "Phụ phí Vendor"
+    description: "Phụ phí thu thêm bởi Vendor (VD: Đổi vị bắp)."
+    semantics: [amount, currency, fee]
+    unit: vnd
+
+  vendor_charge_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền Vendor thu"
+    description: "Tổng tiền Vendor thu (có thể bao gồm phí)."
+    semantics: [amount, currency, charge]
+    unit: vnd
+
+  vendor_reconciliation_price:
+    data_type: decimal(38,18)
+    business_name: "Giá đối soát"
+    description: "Giá trị dùng để đối soát doanh thu với Vendor."
+    semantics: [amount, currency, cost]
+    unit: vnd
+
+  # --- VNPAY PRICING & PROFIT ---
+  vnpay_concession_price:
+    data_type: decimal(38,18)
+    business_name: "Giá bán VNPAY"
+    description: "Giá bán niêm yết trên VNPAY."
+    semantics: [amount, currency, price]
+    unit: vnd
+
+  vnpay_discount_price:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá VNPAY"
+    description: "Số tiền giảm giá do VNPAY tài trợ."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  vnpay_final_price:
+    data_type: decimal(38,18)
+    business_name: "Thành tiền (Khách trả)"
+    description: "Số tiền thực tế khách hàng thanh toán cho món này."
+    semantics: [amount, currency, revenue]
+    unit: vnd
+
+  vnpay_profit:
+    data_type: decimal(38,18)
+    business_name: "Lợi nhuận"
+    description: "Lợi nhuận VNPAY thu được từ món này."
+    semantics: [amount, currency, profit]
+    unit: vnd
+
+  # --- CAMPAIGN & PROMOTION ---
+  campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch"
+    description: "Mã chiến dịch khuyến mãi."
+    semantics: [id, campaign]
+
+  sub_campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch con"
+    description: "Mã chiến dịch con."
+    semantics: [id, campaign, sub]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã Campaign"
+    description: "Mã code chiến dịch."
+    semantics: [code, campaign]
+
+  campaign_type:
+    data_type: varchar
+    business_name: "Loại Campaign"
+    description: "Loại hình chiến dịch."
+    semantics: [category, campaign_type]
+
+  campaign_vendor_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Campaign (Vendor)"
+    description: "Số tiền KM theo chiến dịch do Vendor chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  campaign_vnpay_discount:
+    data_type: decimal(38,18)
+    business_name: "KM Campaign (VNPAY)"
+    description: "Số tiền KM theo chiến dịch do VNPAY chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vendor_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng Promo (Vendor)"
+    description: "Tổng giá trị promotion do Vendor gánh chịu."
+    semantics: [amount, currency, promotion]
+    unit: vnd
+
+  promotion_vnpay_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng Promo (VNPAY)"
+    description: "Tổng giá trị promotion do VNPAY gánh chịu."
+    semantics: [amount, currency, promotion]
+    unit: vnd
+
+  # --- SYSTEM ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm ghi nhận bản ghi."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật lần cuối."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User hệ thống cập nhật."
+    semantics: [user_identity, modifier]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Top 5 combo mang lại lợi nhuận (vnpay_profit) cao nhất?"
+  - "Tổng số tiền khách hàng đã trả (vnpay_final_price) cho bắp nước trong tháng?"
+  - "Tỷ lệ combo được áp dụng khuyến mãi so với combo bán nguyên giá?"
+
+sample_queries:
+  - description: "Thống kê doanh thu và lợi nhuận từ Combo theo ngày"
+    sql: |
+      SELECT
+        date_trunc('day', created_date) as report_date,
+        COUNT(id) as items_sold,
+        SUM(vnpay_final_price) as total_revenue,
+        SUM(vnpay_profit) as total_profit
+      FROM lakehouse.lh_vnfilm_v2.order_concession
+      WHERE created_date >= date_trunc('month', current_date)
+      GROUP BY 1
+      ORDER BY 1 DESC

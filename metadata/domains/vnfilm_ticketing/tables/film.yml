@@ -290,7 +290,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.film
       WHERE publish_date >= current_date - interval '30' day
       ORDER BY publish_date DESC
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Thống kê phim theo thể loại"
     sql: |
@@ -299,4 +299,4 @@ sample_queries:
         COUNT(*) AS total_films
       FROM lakehouse.lh_vnfilm_v2.film
       GROUP BY category
-      ORDER BY total_films DESC;
+      ORDER BY total_films DESC

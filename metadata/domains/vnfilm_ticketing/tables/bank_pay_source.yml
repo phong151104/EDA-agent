@@ -71,7 +71,7 @@ sample_queries:
         pay_source,
         pay_source_name
       FROM lakehouse.lh_vnfilm_v2.bank_pay_source
-      ORDER BY pay_source;
+      ORDER BY pay_source
 
   - description: "Join orders với bank_pay_source để xem tên nguồn thanh toán"
     sql: |
@@ -83,4 +83,4 @@ sample_queries:
       LEFT JOIN lakehouse.lh_vnfilm_v2.bank_pay_source bps
         ON o.billing_pay_source = bps.pay_source
       WHERE o.created_date >= date_trunc('day', current_date) - interval '7' day
-      LIMIT 200;
+      LIMIT 200

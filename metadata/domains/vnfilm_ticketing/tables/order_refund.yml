@@ -1,0 +1,255 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: order_refund
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng thông tin hoàn hủy đơn hàng (order_refund)"
+grain: "1 dòng = 1 yêu cầu hoàn tiền (định danh bởi refund_code)"
+
+description: >
+  Bảng order_refund lưu trữ toàn bộ lịch sử và trạng thái các yêu cầu hoàn/hủy của đơn hàng.
+  Bao gồm thông tin về số tiền yêu cầu hoàn, các loại phí trừ (VNPAY, Vendor, Bank), số tiền hoàn thực tế
+  và quy trình phê duyệt (Approved/Rejected) của hệ thống/admin.
+
+tags:
+  - fact
+  - refund
+  - order_cancellation
+  - finance
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: order_id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng orders để lấy thông tin đơn hàng gốc (order_refund.order_id = orders.id)."
+
+time_columns:
+  - created_date
+  - modified_date
+  - approved_date
+  - rejected_date
+  - cancel_request_date
+
+recommended_filters:
+  - "status cho lọc theo trạng thái hoàn (approved/rejected/initial)"
+  - "created_date cho báo cáo theo thời gian yêu cầu"
+  - "approved_date cho báo cáo tài chính (thời điểm tiền thực về)"
+  - "is_reportable cho việc lọc đơn ảo/test"
+
+concepts:
+  - name: refund
+    synonyms: ["hoàn tiền", "hủy đơn", "refund", "trả hàng"]
+  - name: fee
+    synonyms: ["phí", "phụ phí", "fee", "charge"]
+  - name: approval
+    synonyms: ["duyệt", "phê duyệt", "approve", "xác nhận"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "ID định danh nội bộ của bản ghi hoàn tiền."
+    semantics: [id, primary]
+    pii: false
+
+  refund_code:
+    data_type: varchar
+    business_name: "Mã yêu cầu hoàn"
+    description: "Mã định danh nghiệp vụ duy nhất cho giao dịch hoàn tiền (Unique)."
+    semantics: [id, business_key, refund]
+
+  order_id:
+    data_type: bigint
+    business_name: "ID đơn hàng"
+    description: "Mã định danh đơn hàng gốc."
+    semantics: [id, order, foreign_key]
+    pii: false
+
+  pay_code:
+    data_type: varchar
+    business_name: "Mã thanh toán"
+    description: "Mã tham chiếu thanh toán của đơn hàng gốc."
+    semantics: [id, payment, reference]
+
+  original_amount:
+    data_type: decimal(38,18)
+    business_name: "Giá trị gốc đơn hàng"
+    description: "Tổng giá trị đơn hàng ban đầu (Total Amount)."
+    semantics: [amount, currency, original]
+    unit: vnd
+
+  payment_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền cần thanh toán"
+    description: "Số tiền khách cần trả (Final Amount)."
+    semantics: [amount, currency, payment]
+    unit: vnd
+
+  billing_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền thực thu"
+    description: "Số tiền thực tế đã trừ từ tài khoản khách hàng."
+    semantics: [amount, currency, billing]
+    unit: vnd
+
+  refund_request_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền yêu cầu hoàn"
+    description: "Số tiền khách hàng/hệ thống yêu cầu hoàn lại."
+    semantics: [amount, currency, refund_request]
+    unit: vnd
+
+  refund_vnpay_sub_fee:
+    data_type: decimal(38,18)
+    business_name: "Phí hoàn VNPAY"
+    description: "Phụ phí hoàn tiền thu bởi VNPAY."
+    semantics: [amount, currency, fee]
+    unit: vnd
+
+  refund_vendor_sub_fee:
+    data_type: decimal(38,18)
+    business_name: "Phí hoàn Vendor"
+    description: "Phụ phí hoàn tiền thu bởi Vendor."
+    semantics: [amount, currency, fee]
+    unit: vnd
+
+  refund_bank_sub_fee:
+    data_type: decimal(38,18)
+    business_name: "Phí hoàn Ngân hàng"
+    description: "Phụ phí hoàn tiền thu bởi Ngân hàng."
+    semantics: [amount, currency, fee]
+    unit: vnd
+
+  refund_amount:
+    data_type: decimal(38,18)
+    business_name: "Số tiền hoàn thực tế"
+    description: "Số tiền cuối cùng được hoàn trả về khách (sau khi trừ phí)."
+    semantics: [amount, currency, refund_actual]
+    unit: vnd
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái hoàn"
+    description: "Trạng thái xử lý (initial: Khởi tạo, approved: Đã duyệt, rejected: Từ chối)."
+    semantics: [status, lifecycle]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo yêu cầu"
+    description: "Thời điểm khởi tạo lệnh hoàn tiền."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hoặc hệ thống tạo lệnh hoàn (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash của người tạo (dùng cho RLS)."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật trạng thái gần nhất."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/System cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+
+  rejected_date:
+    data_type: timestamp(6)
+    business_name: "Ngày từ chối"
+    description: "Thời điểm lệnh hoàn bị từ chối (nếu có)."
+    semantics: [date, rejected_time]
+
+  rejected_by:
+    data_type: varchar
+    business_name: "Người từ chối"
+    description: "User từ chối lệnh hoàn."
+    semantics: [user_identity, rejector]
+
+  approved_date:
+    data_type: timestamp(6)
+    business_name: "Ngày phê duyệt"
+    description: "Thời điểm lệnh hoàn được duyệt thành công."
+    semantics: [date, approved_time]
+
+  approved_by:
+    data_type: varchar
+    business_name: "Người phê duyệt"
+    description: "User phê duyệt lệnh hoàn."
+    semantics: [user_identity, approver]
+
+  cancel_request_date:
+    data_type: timestamp(6)
+    business_name: "Ngày yêu cầu hủy"
+    description: "Thời điểm khách hàng bấm nút hủy đơn (có thể khác ngày tạo lệnh hoàn)."
+    semantics: [date, request_time]
+
+  is_reportable:
+    data_type: boolean
+    business_name: "Cờ báo cáo"
+    description: "Đánh dấu bản ghi có hợp lệ để lên báo cáo tài chính hay không."
+    semantics: [flag, report_filter]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - approved_date
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Tổng số tiền đã hoàn thành công (status=approved) trong tháng này?"
+  - "Danh sách các đơn bị từ chối hoàn tiền tuần qua?"
+  - "Tỷ lệ đơn hoàn tiền so với tổng đơn hàng?"
+  - "Tổng phí phạt (VNPAY + Vendor + Bank) đã thu được từ các đơn hoàn?"
+
+sample_queries:
+  - description: "Tổng hợp tiền hoàn theo trạng thái trong tháng hiện tại"
+    sql: |
+      SELECT
+        status,
+        COUNT(*) as total_requests,
+        SUM(refund_request_amount) as total_requested_value,
+        SUM(refund_amount) as total_refunded_value
+      FROM lakehouse.lh_vnfilm_v2.order_refund
+      WHERE created_date >= date_trunc('month', current_date)
+      GROUP BY 1
+
+  - description: "Chi tiết các đơn hoàn thành công và phí liên quan"
+    sql: |
+      SELECT
+        refund_code,
+        approved_date,
+        refund_request_amount,
+        (refund_vnpay_sub_fee + refund_vendor_sub_fee + refund_bank_sub_fee) as total_fee,
+        refund_amount
+      FROM lakehouse.lh_vnfilm_v2.order_refund
+      WHERE status = 'approved'
+        AND approved_date >= date_trunc('day', current_date) - interval '7' day
+      ORDER BY approved_date DESC
+      LIMIT 100

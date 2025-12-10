@@ -1,0 +1,164 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: vendor_bank
+domain: vnfilm_ticketing
+
+table_type: bridge
+business_name: "Bảng ánh xạ Vendor - Bank (Connection)"
+grain: "1 dòng = 1 mối liên kết hợp lệ giữa một Ngân hàng và một Vendor."
+
+description: >
+  Bảng vendor_bank lưu trữ cấu hình kết nối giữa Ngân hàng (Bank) và Đối tác rạp (Vendor).
+  Bảng này xác định Vendor nào được phép xuất hiện và cung cấp dịch vụ trên kênh của Ngân hàng nào.
+  Dữ liệu thường được denormalize (lưu dư thừa tên Bank/Vendor) để phục vụ truy vấn nhanh.
+
+tags:
+  - bridge
+  - mapping
+  - integration
+  - configuration
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng bank."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng vendor."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status = 'active' để lấy các liên kết đang hoạt động"
+  - "bank_id để xem một ngân hàng đang hỗ trợ những rạp nào"
+  - "vendor_id để xem rạp này đang có mặt trên những ngân hàng nào"
+
+concepts:
+  - name: integration
+    synonyms: ["kết nối", "tích hợp", "allow list"]
+  - name: channel
+    synonyms: ["kênh bán", "bank channel"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của liên kết."
+    semantics: [id, primary]
+    pii: false
+
+  # --- BANK INFO ---
+  bank_id:
+    data_type: bigint
+    business_name: "ID Ngân hàng"
+    description: "Mã định danh ngân hàng."
+    semantics: [id, bank]
+
+  bank_name_vi:
+    data_type: varchar
+    business_name: "Tên Ngân hàng (VI)"
+    description: "Tên hiển thị của ngân hàng (Tiếng Việt)."
+    semantics: [name, bank, vi]
+
+  bank_name_en:
+    data_type: varchar
+    business_name: "Tên Ngân hàng (EN)"
+    description: "Tên hiển thị của ngân hàng (Tiếng Anh)."
+    semantics: [name, bank, en]
+
+  # --- VENDOR INFO ---
+  vendor_id:
+    data_type: bigint
+    business_name: "ID Vendor"
+    description: "Mã định danh đối tác rạp."
+    semantics: [id, vendor]
+
+  vendor_name_vi:
+    data_type: varchar
+    business_name: "Tên Vendor (VI)"
+    description: "Tên hiển thị của đối tác (Tiếng Việt)."
+    semantics: [name, vendor, vi]
+
+  vendor_name_en:
+    data_type: varchar
+    business_name: "Tên Vendor (EN)"
+    description: "Tên hiển thị của đối tác (Tiếng Anh)."
+    semantics: [name, vendor, en]
+
+  # --- SYSTEM STATUS ---
+  status:
+    data_type: varchar
+    business_name: "Trạng thái"
+    description: "Trạng thái kết nối (active: Cho phép, inactive: Tạm ngắt)."
+    semantics: [status, active_state]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm tạo liên kết."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Ngày cập nhật"
+    description: "Thời điểm cập nhật trạng thái liên kết."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User hệ thống cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Ngân hàng VNPAY (ID 49) đang kết nối với những rạp nào?"
+  - "Có bao nhiêu rạp đang active trên hệ thống?"
+  - "Kiểm tra xem rạp Galaxy có đang bị tắt (inactive) trên ngân hàng nào không?"
+
+sample_queries:
+  - description: "Danh sách các Vendor đang hoạt động trên Ví VNPAY (Bank ID 49)"
+    sql: |
+      SELECT
+        vendor_name_vi,
+        status,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.vendor_bank
+      WHERE bank_id = 49
+        AND status = 'active'
+      ORDER BY vendor_name_vi

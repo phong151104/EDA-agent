@@ -1,0 +1,415 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: pre_order
+domain: vnfilm_ticketing
+
+table_type: fact_transaction
+business_name: "Bảng thông tin đặt vé trước (Pre-Order)"
+grain: "1 dòng = 1 phiên giao dịch đặt vé (trước khi thanh toán thành công)."
+
+description: >
+  Bảng pre_order lưu trữ thông tin của phiên giao dịch ngay tại bước xác nhận đơn hàng (trước khi thanh toán).
+  Chứa đầy đủ thông tin context về rạp, phim, suất chiếu, các mã khuyến mãi (promotion) đang được giữ (hold),
+  và thông tin định danh khách hàng phía ngân hàng. Bảng này thường dùng để trace lỗi, debug luồng đặt vé 
+  hoặc phân tích tỷ lệ rớt đơn (drop-off) trước bước thanh toán.
+
+tags:
+  - fact
+  - pre_order
+  - transaction_log
+  - promotion_hold
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng bank để lấy thông tin ngân hàng."
+
+  - column: campaign_id
+    references_table: "lakehouse.lh_vnfilm_v2.campaign"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng campaign."
+
+  - column: cinema_id
+    references_table: "lakehouse.lh_vnfilm_v2.cinema"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng cinema."
+
+  - column: film_id
+    references_table: "lakehouse.lh_vnfilm_v2.film"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng film."
+
+  - column: session_id
+    references_table: "lakehouse.lh_vnfilm_v2.session"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng session."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng vendor."
+
+time_columns:
+  - created_date
+  - session_time
+  - promotion_hold_date
+
+recommended_filters:
+  - "created_date cho việc trace log theo thời gian thực"
+  - "api_version cho việc phân tách các phiên bản app"
+  - "promotion_code để kiểm tra việc áp dụng mã giảm giá"
+  - "bank_name để phân tích nguồn traffic từ ngân hàng nào"
+
+concepts:
+  - name: pre_order
+    synonyms: ["đặt trước", "booking request", "phiên giao dịch"]
+  - name: hold
+    synonyms: ["giữ chỗ", "giữ mã", "lock"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi"
+    description: "Mã định danh duy nhất của phiên pre-order."
+    semantics: [id, primary]
+    pii: false
+
+  api_version:
+    data_type: varchar
+    business_name: "API Version"
+    description: "Phiên bản API được sử dụng (v2, v3, v4...)."
+    semantics: [version, system]
+
+  # --- BANK INFO ---
+  bank_id:
+    data_type: bigint
+    business_name: "ID Ngân hàng"
+    description: "Mã định danh ngân hàng."
+    semantics: [id, bank]
+
+  bank_name:
+    data_type: varchar
+    business_name: "Tên Ngân hàng"
+    description: "Tên ngân hàng thực hiện giao dịch."
+    semantics: [name, bank]
+
+  bank_identity:
+    data_type: varchar
+    business_name: "User ID (Bank)"
+    description: "Định danh khách hàng từ phía App Ngân hàng (SĐT/Account)."
+    semantics: [user_identity, bank]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    business_name: "User ID Hash"
+    description: "Mã hash định danh khách hàng."
+    semantics: [user_identity, bank, hash]
+    pii: false
+
+  bank_channel_id:
+    data_type: varchar
+    business_name: "Mã kênh Ngân hàng"
+    description: "Mã kênh chi tiết của ngân hàng (nếu có)."
+    semantics: [id, channel, bank]
+
+  # --- PROMOTION ---
+  promotion_id:
+    data_type: varchar
+    business_name: "ID Khuyến mãi"
+    description: "Mã định danh hệ thống Voucher."
+    semantics: [id, promotion]
+
+  promotion_code:
+    data_type: varchar
+    business_name: "Mã Voucher"
+    description: "Mã giảm giá khách hàng đang thử áp dụng."
+    semantics: [code, promotion]
+
+  promotion_amount:
+    data_type: decimal(38,18)
+    business_name: "Tổng tiền giảm"
+    description: "Tổng giá trị giảm giá dự kiến."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vnpay_amount:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá VNPAY"
+    description: "Phần giảm giá do VNPAY chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_vendor_amount:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá Vendor"
+    description: "Phần giảm giá do Vendor chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_bank_amount:
+    data_type: decimal(38,18)
+    business_name: "Giảm giá Bank"
+    description: "Phần giảm giá do Bank chịu."
+    semantics: [amount, currency, discount]
+    unit: vnd
+
+  promotion_hold_date:
+    data_type: timestamp(6)
+    business_name: "Thời gian giữ mã"
+    description: "Thời điểm mã giảm giá được tạm giữ (hold)."
+    semantics: [date, promotion_time]
+
+  promotion_hold_response:
+    data_type: varchar
+    business_name: "Phản hồi giữ mã"
+    description: "Kết quả trả về từ hệ thống khi gọi lệnh hold voucher."
+    semantics: [text, system_response]
+
+  # --- CAMPAIGN ---
+  campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch"
+    description: "Mã chiến dịch."
+    semantics: [id, campaign]
+
+  sub_campaign_id:
+    data_type: bigint
+    business_name: "ID Chiến dịch con"
+    description: "Mã chiến dịch con."
+    semantics: [id, campaign, sub]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã chiến dịch"
+    description: "Mã code chiến dịch gửi sang đối tác."
+    semantics: [code, campaign]
+
+  campaign_type:
+    data_type: varchar
+    business_name: "Loại chiến dịch"
+    description: "Phân loại chiến dịch (normal, groupSale, promotion...)."
+    semantics: [category, campaign_type]
+
+  # --- CINEMA & LOCATION ---
+  cinema_id:
+    data_type: bigint
+    business_name: "ID Rạp"
+    description: "Mã định danh rạp."
+    semantics: [id, cinema]
+
+  cinema_name_vi:
+    data_type: varchar
+    business_name: "Tên rạp (VI)"
+    description: "Tên rạp tiếng Việt."
+    semantics: [name, cinema, vi]
+
+  cinema_name_en:
+    data_type: varchar
+    business_name: "Tên rạp (EN)"
+    description: "Tên rạp tiếng Anh."
+    semantics: [name, cinema, en]
+
+  cinema_address:
+    data_type: varchar
+    business_name: "Địa chỉ rạp"
+    description: "Địa chỉ chi tiết của rạp."
+    semantics: [address, cinema]
+
+  location_id:
+    data_type: bigint
+    business_name: "ID Địa điểm"
+    description: "Mã định danh tỉnh/thành phố."
+    semantics: [id, location]
+
+  # --- FILM ---
+  film_id:
+    data_type: bigint
+    business_name: "ID Phim"
+    description: "Mã định danh phim."
+    semantics: [id, film]
+
+  film_name_vi:
+    data_type: varchar
+    business_name: "Tên phim (VI)"
+    description: "Tên phim tiếng Việt."
+    semantics: [name, film, vi]
+
+  film_name_en:
+    data_type: varchar
+    business_name: "Tên phim (EN)"
+    description: "Tên phim tiếng Anh."
+    semantics: [name, film, en]
+
+  # --- SESSION ---
+  session_id:
+    data_type: bigint
+    business_name: "ID Suất chiếu"
+    description: "Mã định danh suất chiếu."
+    semantics: [id, session]
+
+  session_type:
+    data_type: varchar
+    business_name: "Loại suất chiếu"
+    description: "Loại suất (nowShowing, sneakShow...)."
+    semantics: [category, session, type]
+
+  session_dimension:
+    data_type: varchar
+    business_name: "Định dạng"
+    description: "Định dạng chiếu (2D, 3D...)."
+    semantics: [category, session, dimension]
+
+  session_time:
+    data_type: timestamp(6)
+    business_name: "Giờ chiếu"
+    description: "Thời gian bắt đầu chiếu."
+    semantics: [date, session, show_time]
+
+  session_version:
+    data_type: varchar
+    business_name: "Phiên bản"
+    description: "Phiên bản chiếu (Lồng tiếng, Phụ đề...)."
+    semantics: [version, session]
+
+  session_version_type:
+    data_type: varchar
+    business_name: "Mã phiên bản"
+    description: "Mã kỹ thuật phiên bản (VER_2D_SUB...)."
+    semantics: [category, session, version_type]
+
+  # --- VENDOR MAPPING ---
+  vendor_id:
+    data_type: bigint
+    business_name: "ID Vendor"
+    description: "Mã định danh đối tác."
+    semantics: [id, vendor]
+
+  vendor_name:
+    data_type: varchar
+    business_name: "Tên Vendor"
+    description: "Tên đối tác cung cấp."
+    semantics: [name, vendor]
+
+  vendor_cinema_id:
+    data_type: varchar
+    business_name: "Mã rạp Vendor"
+    description: "Mã rạp phía hệ thống Vendor."
+    semantics: [id, vendor, cinema, external_id]
+
+  vendor_film_id:
+    data_type: varchar
+    business_name: "Mã phim Vendor"
+    description: "Mã phim phía hệ thống Vendor."
+    semantics: [id, vendor, film, external_id]
+
+  vendor_film_name_vi:
+    data_type: varchar
+    business_name: "Tên phim Vendor (VI)"
+    description: "Tên phim hệ thống Vendor (VI)."
+    semantics: [name, vendor, film, vi]
+
+  vendor_film_name_en:
+    data_type: varchar
+    business_name: "Tên phim Vendor (EN)"
+    description: "Tên phim hệ thống Vendor (EN)."
+    semantics: [name, vendor, film, en]
+
+  vendor_session_id:
+    data_type: varchar
+    business_name: "Mã suất chiếu Vendor"
+    description: "Mã suất chiếu phía hệ thống Vendor."
+    semantics: [id, vendor, session, external_id]
+
+  vendor_room_id:
+    data_type: varchar
+    business_name: "Mã phòng Vendor"
+    description: "Mã phòng chiếu phía hệ thống Vendor."
+    semantics: [id, vendor, room, external_id]
+
+  vendor_room_name_vi:
+    data_type: varchar
+    business_name: "Tên phòng Vendor (VI)"
+    description: "Tên phòng chiếu Vendor (VI)."
+    semantics: [name, vendor, room, vi]
+
+  vendor_room_name_en:
+    data_type: varchar
+    business_name: "Tên phòng Vendor (EN)"
+    description: "Tên phòng chiếu Vendor (EN)."
+    semantics: [name, vendor, room, en]
+
+  # --- SYSTEM INFO ---
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Ngày tạo"
+    description: "Thời điểm tạo bản ghi."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User hệ thống (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Người tạo (Hash)"
+    description: "Mã hash người tạo."
+    semantics: [user_identity, creator, hash]
+    pii: false
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 100
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    forbidden_columns:
+      - created_by
+      - bank_identity
+
+sample_questions:
+  - "Có bao nhiêu lượt đặt trước (pre_order) trong ngày hôm nay?"
+  - "Tỷ lệ sử dụng mã giảm giá (promotion_code) trong các lượt đặt trước?"
+  - "Phân bố các giao dịch pre_order theo ngân hàng (bank_name)?"
+  - "Danh sách các lỗi hold promotion (promotion_hold_response) thường gặp?"
+
+sample_queries:
+  - description: "Thống kê số lượng pre_order theo Ngân hàng trong ngày"
+    sql: |
+      SELECT
+        bank_name,
+        COUNT(*) as total_attempts
+      FROM lakehouse.lh_vnfilm_v2.pre_order
+      WHERE created_date >= date_trunc('day', current_date)
+      GROUP BY 1
+      ORDER BY total_attempts DESC
+
+  - description: "Kiểm tra các mã Promotion đang được giữ (Hold)"
+    sql: |
+      SELECT
+        promotion_code,
+        promotion_hold_date,
+        promotion_amount,
+        bank_name
+      FROM lakehouse.lh_vnfilm_v2.pre_order
+      WHERE promotion_code IS NOT NULL
+        AND promotion_hold_date >= date_trunc('day', current_date)
+      ORDER BY promotion_hold_date DESC
+      LIMIT 100

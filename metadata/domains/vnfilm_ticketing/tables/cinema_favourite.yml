@@ -138,7 +138,7 @@ sample_queries:
       WHERE created_date >= date_trunc('month', current_date)
       GROUP BY cinema_id
       ORDER BY favourite_count DESC
-      LIMIT 20;
+      LIMIT 20
 
   - description: "Danh sách rạp yêu thích của một người dùng"
     sql: |
@@ -148,4 +148,4 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.cinema_favourite
       WHERE bank_identity_hash = '{{user_hash}}'
       ORDER BY created_date DESC
-      LIMIT 50;
+      LIMIT 50

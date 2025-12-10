@@ -189,7 +189,7 @@ sample_queries:
       FROM lakehouse.lh_vnfilm_v2.customer_tracking
       WHERE created_date >= date_trunc('day', current_date) - interval '6' day
       GROUP BY device_type, day
-      ORDER BY day DESC, total_tracking DESC;
+      ORDER BY day DESC, total_tracking DESC
 
   - description: "Thống kê số tracking theo SDK version"
     sql: |
@@ -200,7 +200,7 @@ sample_queries:
       WHERE created_date >= date_trunc('month', current_date) - interval '2' month
       GROUP BY sdk_version
       ORDER BY total_tracking DESC
-      LIMIT 200;
+      LIMIT 200
 
   - description: "Phân bổ tracking theo ngân hàng và loại thiết bị"
     sql: |
@@ -212,4 +212,4 @@ sample_queries:
       WHERE created_date >= date_trunc('day', current_date) - interval '29' day
       GROUP BY bank_id, device_type
       ORDER BY total_tracking DESC
-      LIMIT 200;
+      LIMIT 200
