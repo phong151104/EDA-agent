@@ -9,11 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict, TYPE_CHECKING
 from uuid import uuid4
 
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+
+if TYPE_CHECKING:
+    from src.context_fusion import EnrichedContext
 
 
 class WorkflowPhase(str, Enum):
@@ -45,9 +48,12 @@ class EDAState(TypedDict, total=False):
     user_question: str
     
     # === Context Fusion Layer ===
-    enriched_context: dict[str, Any]
-    schema_context: dict[str, Any]
-    episodic_context: list[dict[str, Any]]
+    enriched_context: dict[str, Any]  # Full EnrichedContext as dict
+    prompt_context: str  # Formatted prompt for agents
+    sub_graph: dict[str, Any]  # SubGraph as dict
+    analyzed_query: dict[str, Any]  # AnalyzedQuery as dict
+    schema_context: dict[str, Any]  # Legacy field
+    episodic_context: list[dict[str, Any]]  # From Episodic Memory
     
     # === Planning Layer ===
     current_plan: dict[str, Any] | None
@@ -101,6 +107,9 @@ def create_initial_state(question: str) -> EDAState:
         
         # Context
         enriched_context={},
+        prompt_context="",
+        sub_graph={},
+        analyzed_query={},
         schema_context={},
         episodic_context=[],
         

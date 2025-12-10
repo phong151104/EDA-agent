@@ -1,7 +1,7 @@
 catalog: lakehouse
 schema: cdp_mart
 table_name: cdp_camp_conversion_stage
-domain: marketing_campaign
+domain: vnfilm_ticketing
 
 table_type: fact_aggregate
 business_name: "Bảng tổng hợp funnel chuyển đổi theo stage cho campaign (cdp_camp_conversion_stage)"

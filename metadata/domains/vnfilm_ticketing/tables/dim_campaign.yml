@@ -1,7 +1,7 @@
 catalog: lakehouse
 schema: cdp_mart
 table_name: dim_campaign
-domain: marketing_campaign
+domain: vnfilm_ticketing
 
 table_type: dim
 business_name: "Dimension chiến dịch marketing (dim_campaign)"

@@ -333,22 +333,23 @@ class SchemaRetriever:
         if not keywords:
             return {}
         
+        # Simpler approach: search each keyword and count matches per table
         query = """
         MATCH (t:Table {domain: $domain})
         OPTIONAL MATCH (t)-[:HAS_COLUMN]->(c:Column)
         OPTIONAL MATCH (t)-[:HAS_CONCEPT]->(con:Concept)
-        WITH t, c, con, $keywords AS keywords
-        WHERE any(kw IN keywords WHERE 
-            toLower(t.table_name) CONTAINS toLower(kw) OR
-            toLower(t.business_name) CONTAINS toLower(kw) OR
-            toLower(t.description) CONTAINS toLower(kw) OR
-            toLower(c.column_name) CONTAINS toLower(kw) OR
-            toLower(c.business_name) CONTAINS toLower(kw) OR
-            any(sem IN c.semantics WHERE toLower(sem) CONTAINS toLower(kw)) OR
-            toLower(con.name) CONTAINS toLower(kw) OR
-            any(syn IN con.synonyms WHERE toLower(syn) CONTAINS toLower(kw))
-        )
-        RETURN t.table_name AS table_name, count(DISTINCT kw) AS match_count
+        WITH t, collect(DISTINCT c) AS cols, collect(DISTINCT con) AS concepts
+        WITH t, cols, concepts,
+             [kw IN $keywords WHERE 
+                toLower(t.table_name) CONTAINS toLower(kw) OR
+                toLower(t.business_name) CONTAINS toLower(kw) OR
+                toLower(coalesce(t.description, '')) CONTAINS toLower(kw) OR
+                any(col IN cols WHERE toLower(col.column_name) CONTAINS toLower(kw)) OR
+                any(col IN cols WHERE toLower(coalesce(col.business_name, '')) CONTAINS toLower(kw)) OR
+                any(concept IN concepts WHERE toLower(concept.name) CONTAINS toLower(kw))
+             ] AS matched_keywords
+        WHERE size(matched_keywords) > 0
+        RETURN t.table_name AS table_name, size(matched_keywords) AS match_count
         ORDER BY match_count DESC
         LIMIT 20
         """

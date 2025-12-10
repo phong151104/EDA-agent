@@ -35,37 +35,65 @@ async def context_fusion_node(state: EDAState) -> dict[str, Any]:
     Context Fusion Layer node.
     
     Retrieves relevant schema and episodic context for the question.
+    Uses hybrid search: Vector (semantic) + Keyword + Entity matching.
     """
-    logger.info(f"Context fusion for: {state['user_question'][:50]}...")
+    from src.context_fusion import ContextBuilder
     
-    # TODO: Implement actual context retrieval
-    # - Query Graph RAG for schema
-    # - Query Episodic Memory for similar past analyses
-    # - Rewrite query if needed
+    logger.info(f"[Context Fusion] Processing: {state['user_question'][:50]}...")
     
-    enriched_context = {
-        "tables": [],
-        "columns": [],
-        "metrics": [],
-        "joins": [],
-        "similar_queries": [],
-    }
-    
-    return {
-        "enriched_context": enriched_context,
-        "schema_context": {},  # From GraphRAG
-        "episodic_context": [],  # From Episodic Memory
-        "current_phase": WorkflowPhase.PLANNING.value,
-    }
+    try:
+        # Build enriched context using hybrid search
+        builder = ContextBuilder(use_llm=True, domain="vnfilm_ticketing")
+        context = await builder.build(state["user_question"], top_k=10)
+        builder.close()
+        
+        logger.info(
+            f"[Context Fusion] Found: {len(context.sub_graph.tables)} tables, "
+            f"{len(context.sub_graph.columns)} columns, "
+            f"{len(context.sub_graph.joins)} joins"
+        )
+        
+        return {
+            "enriched_context": context.to_dict(),
+            "prompt_context": context.prompt_context,
+            "sub_graph": context.sub_graph.to_dict(),
+            "analyzed_query": {
+                "intent": context.analyzed_query.intent.value,
+                "keywords": context.analyzed_query.keywords,
+                "entities": [
+                    {"text": e.text, "type": e.entity_type, "normalized": e.normalized_name}
+                    for e in context.analyzed_query.entities
+                ],
+                "rewritten_query": context.analyzed_query.rewritten_query,
+            },
+            "schema_context": context.sub_graph.to_dict(),  # For backward compatibility
+            "current_phase": WorkflowPhase.PLANNING.value,
+            "messages": [AIMessage(content=f"[ContextFusion] Found {len(context.sub_graph.tables)} relevant tables")],
+        }
+    except Exception as e:
+        logger.error(f"[Context Fusion] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return empty context on error
+        return {
+            "enriched_context": {},
+            "prompt_context": "",
+            "sub_graph": {},
+            "analyzed_query": {},
+            "schema_context": {},
+            "error_message": f"Context fusion failed: {str(e)}",
+            "current_phase": WorkflowPhase.PLANNING.value,
+        }
 
 
 async def planner_node(state: EDAState) -> dict[str, Any]:
     """
     Planner Agent node.
     
-    Generates or refines analysis plan based on context and feedback.
+    Generates or refines analysis plan based on enriched context from Context Fusion.
     """
-    logger.info(f"Planning iteration {state.get('debate_iteration', 0) + 1}")
+    logger.info(f"[Planner] Iteration {state.get('debate_iteration', 0) + 1}")
     
     # Initialize planner
     planner = PlannerAgent()
@@ -86,12 +114,24 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
             version=plan_dict.get("version", 1),
         )
     
+    # Use prompt_context from Context Fusion for richer schema info
+    enriched_context = state.get("enriched_context", {})
+    prompt_context = state.get("prompt_context", "")
+    
+    # Enhance enriched_context with prompt_context
+    if prompt_context:
+        enriched_context["schema_description"] = prompt_context
+    
     planner_input = PlannerInput(
         question=state["user_question"],
-        enriched_context=state.get("enriched_context", {}),
+        enriched_context=enriched_context,
         previous_plan=previous_plan,
         critic_feedback=state.get("critic_feedback"),
     )
+    
+    # Log what's being passed
+    logger.info(f"[Planner] Intent: {state.get('analyzed_query', {}).get('intent', 'unknown')}")
+    logger.info(f"[Planner] Tables available: {len(state.get('sub_graph', {}).get('tables', []))}")
     
     # Generate plan
     output = await planner.process(planner_input)
@@ -106,7 +146,7 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
         "plan_history": plan_history,
         "hypotheses": [h.to_dict() for h in output.plan.hypotheses],
         "current_phase": WorkflowPhase.VALIDATION.value,
-        "messages": [AIMessage(content=f"[Planner] {output.reasoning[:200]}...")],
+        "messages": [AIMessage(content=f"[Planner] Generated plan with {len(output.plan.steps)} steps")],
     }
 
 

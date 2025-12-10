@@ -3,7 +3,7 @@
 Test script for Context Fusion Layer.
 
 Usage:
-    python scripts/test_context_fusion.py "Tại sao doanh thu giảm?"
+    python scripts/test/test_context_fusion.py "Tại sao doanh thu giảm?"
 """
 
 import asyncio
@@ -19,8 +19,9 @@ warnings.filterwarnings("ignore", message=".*neo4j.*")
 # Set log level for neo4j to ERROR only
 logging.getLogger("neo4j").setLevel(logging.ERROR)
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to path (go up 2 levels: test -> scripts -> project root)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
 load_dotenv()

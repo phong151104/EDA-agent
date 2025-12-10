@@ -1,26 +1,309 @@
 # metadata/domains/vnfilm_ticketing/joins.yaml
+# Auto-generated from foreign_keys in table YML files
+# Purpose: Define explicit JOIN clauses for Text2SQL and query generation
+
 joins:
+  # =============================================================================
+  # ORDERS (Core Fact Table) - Central hub for all order-related joins
+  # =============================================================================
+  
   - from: orders
     to: bank
     type: left
     on:
       - "orders.bank_id = bank.id"
-    description: "Join đơn hàng với thông tin ngân hàng."
+    description: "Join đơn hàng với thông tin ngân hàng thanh toán."
 
-  - from: orders
-    to: order_film
+  # =============================================================================
+  # ORDER DETAIL TABLES → ORDERS
+  # =============================================================================
+  
+  - from: order_seat
+    to: orders
     type: left
     on:
-      - "orders.id = order_film.id"
-    description: "Join đơn hàng với thông tin đơn hàng chi tiết film."
+      - "order_seat.order_id = orders.id"
+    description: "Join chi tiết ghế/vé với đơn hàng."
+
+  - from: order_film
+    to: orders
+    type: inner
+    on:
+      - "order_film.id = orders.id"
+    description: "Join 1-1 thông tin phim/rạp/suất chiếu với đơn hàng."
+
+  - from: order_concession
+    to: orders
+    type: left
+    on:
+      - "order_concession.order_id = orders.id"
+    description: "Join chi tiết combo/bắp nước với đơn hàng."
+
+  - from: order_refund
+    to: orders
+    type: left
+    on:
+      - "order_refund.order_id = orders.id"
+    description: "Join thông tin hoàn vé với đơn hàng."
+
+  - from: customer_tracking
+    to: orders
+    type: left
+    on:
+      - "customer_tracking.order_id = orders.id"
+    description: "Join tracking khách hàng với đơn hàng."
+
+  # =============================================================================
+  # NOTIFICATION TABLES → ORDERS
+  # =============================================================================
+
+  - from: notify_email
+    to: orders
+    type: left
+    on:
+      - "notify_email.order_id = orders.id"
+    description: "Join thông báo email với đơn hàng."
+
+  - from: notify_sms
+    to: orders
+    type: left
+    on:
+      - "notify_sms.order_id = orders.id"
+    description: "Join thông báo SMS với đơn hàng."
+
+  - from: notify_ott
+    to: orders
+    type: left
+    on:
+      - "notify_ott.order_id = orders.id"
+    description: "Join thông báo OTT (push notification) với đơn hàng."
+
+  - from: notify_email
+    to: order_refund
+    type: left
+    on:
+      - "notify_email.refund_id = order_refund.id"
+    description: "Join thông báo email với đơn hoàn vé."
+
+  - from: notify_sms
+    to: order_refund
+    type: left
+    on:
+      - "notify_sms.refund_id = order_refund.id"
+    description: "Join thông báo SMS với đơn hoàn vé."
+
+  - from: notify_ott
+    to: order_refund
+    type: left
+    on:
+      - "notify_ott.refund_id = order_refund.id"
+    description: "Join thông báo OTT với đơn hoàn vé."
+
+  # =============================================================================
+  # ORDER_FILM → DIMENSION TABLES
+  # =============================================================================
 
   - from: order_film
     to: vendor
     type: left
     on:
       - "order_film.vendor_id = vendor.id"
-    description: "Join đơn hàng với thông tin vendor."
-    
-  # sau này thêm:
-  # - orders.campaign_id -> campaign.id
-  # - orders.sub_campaign_id -> sub_campaign.id
+    description: "Join thông tin đơn hàng với vendor (rạp đối tác)."
+
+  - from: order_film
+    to: locations
+    type: left
+    on:
+      - "order_film.location_id = locations.id"
+    description: "Join thông tin đơn hàng với địa điểm (tỉnh/thành phố)."
+
+  # =============================================================================
+  # PRE_ORDER (Pre-booking flow)
+  # =============================================================================
+
+  - from: pre_order
+    to: bank
+    type: left
+    on:
+      - "pre_order.bank_id = bank.id"
+    description: "Join pre-order với ngân hàng."
+
+  - from: pre_order
+    to: cinema
+    type: left
+    on:
+      - "pre_order.cinema_id = cinema.id"
+    description: "Join pre-order với rạp."
+
+  - from: pre_order
+    to: film
+    type: left
+    on:
+      - "pre_order.film_id = film.id"
+    description: "Join pre-order với phim."
+
+  - from: pre_order
+    to: vendor
+    type: left
+    on:
+      - "pre_order.vendor_id = vendor.id"
+    description: "Join pre-order với vendor."
+
+  - from: pre_order
+    to: campaign
+    type: left
+    on:
+      - "pre_order.campaign_id = campaign.id"
+    description: "Join pre-order với chiến dịch khuyến mãi."
+
+  - from: pre_order_seat
+    to: pre_order
+    type: left
+    on:
+      - "pre_order_seat.pre_order_id = pre_order.id"
+    description: "Join chi tiết ghế pre-order với pre-order."
+
+  - from: pre_order_concession
+    to: pre_order
+    type: left
+    on:
+      - "pre_order_concession.pre_order_id = pre_order.id"
+    description: "Join chi tiết combo pre-order với pre-order."
+
+  - from: pre_order_customer
+    to: pre_order
+    type: left
+    on:
+      - "pre_order_customer.pre_order_id = pre_order.id"
+    description: "Join thông tin khách hàng pre-order."
+
+  # =============================================================================
+  # DIMENSION TABLES
+  # =============================================================================
+
+  - from: cinema
+    to: vendor
+    type: left
+    on:
+      - "cinema.vendor_id = vendor.id"
+    description: "Join rạp với vendor."
+
+  - from: cinema
+    to: locations
+    type: left
+    on:
+      - "cinema.location_id = locations.id"
+    description: "Join rạp với địa điểm (tỉnh/thành)."
+
+  - from: film
+    to: vendor
+    type: left
+    on:
+      - "film.vendor_id = vendor.id"
+    description: "Join phim với vendor."
+
+  - from: concession
+    to: vendor
+    type: left
+    on:
+      - "concession.vendor_id = vendor.id"
+    description: "Join combo/bắp nước với vendor."
+
+  - from: concession
+    to: cinema
+    type: left
+    on:
+      - "concession.cinema_id = cinema.id"
+    description: "Join combo với rạp."
+
+  - from: sessions
+    to: cinema
+    type: left
+    on:
+      - "sessions.cinema_id = cinema.id"
+    description: "Join suất chiếu với rạp."
+
+  - from: sessions
+    to: film
+    type: left
+    on:
+      - "sessions.film_id = film.id"
+    description: "Join suất chiếu với phim."
+
+  - from: sessions
+    to: vendor
+    type: left
+    on:
+      - "sessions.vendor_id = vendor.id"
+    description: "Join suất chiếu với vendor."
+
+  - from: sessions
+    to: locations
+    type: left
+    on:
+      - "sessions.location_id = locations.id"
+    description: "Join suất chiếu với địa điểm."
+
+  # =============================================================================
+  # VENDOR & BANK RELATIONSHIPS
+  # =============================================================================
+
+  - from: vendor_bank
+    to: bank
+    type: left
+    on:
+      - "vendor_bank.bank_id = bank.id"
+    description: "Join cấu hình vendor-bank với ngân hàng."
+
+  - from: vendor_bank
+    to: vendor
+    type: left
+    on:
+      - "vendor_bank.vendor_id = vendor.id"
+    description: "Join cấu hình vendor-bank với vendor."
+
+  - from: bank_seat_definition
+    to: bank
+    type: left
+    on:
+      - "bank_seat_definition.bank_id = bank.id"
+    description: "Join định nghĩa ghế bank với ngân hàng."
+
+  - from: cinema_favourite
+    to: bank
+    type: left
+    on:
+      - "cinema_favourite.bank_id = bank.id"
+    description: "Join rạp yêu thích với ngân hàng."
+
+  - from: cinema_favourite
+    to: cinema
+    type: left
+    on:
+      - "cinema_favourite.cinema_id = cinema.id"
+    description: "Join rạp yêu thích với rạp."
+
+  - from: cinema_favourite
+    to: vendor
+    type: left
+    on:
+      - "cinema_favourite.vendor_id = vendor.id"
+    description: "Join rạp yêu thích với vendor."
+
+  - from: customer_tracking
+    to: bank
+    type: left
+    on:
+      - "customer_tracking.bank_id = bank.id"
+    description: "Join tracking khách hàng với ngân hàng."
+
+  # =============================================================================
+  # CAMPAIGN (Marketing)
+  # =============================================================================
+
+  - from: cdp_camp_conversion_stage
+    to: dim_campaign
+    type: left
+    on:
+      - "cdp_camp_conversion_stage.campaign_id = dim_campaign.campaign_id"
+    description: "Join conversion stage với campaign dimension."
