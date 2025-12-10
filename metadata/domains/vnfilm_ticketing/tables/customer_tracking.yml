@@ -1,0 +1,215 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: customer_tracking
+domain: vnfilm_ticketing
+
+table_type: fact
+business_name: "Log tracking thiết bị/khách hàng theo đơn hàng (customer_tracking)"
+grain: "1 dòng = 1 lần ghi nhận tracking cho một pre_order/order trên một thiết bị cụ thể"
+
+description: >
+  Bảng log ghi nhận thông tin thiết bị, vị trí, phiên bản SDK/app và định danh ngân hàng
+  tại thời điểm khách hàng thực hiện pre_order/order. Thường được dùng để phân tích hành vi
+  người dùng theo thiết bị, OS, vị trí, IP, và ngân hàng, hoặc để đối soát/truy vết sự cố.
+
+tags:
+  - fact
+  - tracking
+  - device
+  - location
+  - bank
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: pre_order_id
+    references_table: "lakehouse.lh_vnfilm_v2.pre_order"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Pre-order tương ứng (nếu hệ thống có bảng pre_order)."
+
+  - column: order_id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Đơn hàng tương ứng (nếu đã tạo order)."
+
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Ngân hàng mà khách đang sử dụng khi tracking."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "created_date cho phân tích theo thời gian (ngày/giờ) tracking"
+  - "device_type, os_version, sdk_version cho phân tích theo thiết bị/phiên bản app"
+  - "bank_id hoặc bank_identity_hash cho phân tích theo ngân hàng (áp RLS nếu cần)"
+  - "order_id/pre_order_id khi truy vết một đơn hàng cụ thể"
+
+concepts:
+  - name: tracking
+    synonyms: ["tracking", "log", "sự kiện", "event", "customer tracking"]
+
+  - name: device
+    synonyms: ["thiết bị", "device", "điện thoại", "mobile", "tablet"]
+
+  - name: location
+    synonyms: ["vị trí", "location", "latitude", "longitude"]
+
+  - name: bank_identity
+    synonyms: ["tài khoản ngân hàng", "định danh bank", "user ngân hàng"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi tracking"
+    description: "Khóa chính của bảng customer_tracking."
+    semantics: [id, primary, tracking]
+    pii: false
+
+  pre_order_id:
+    data_type: bigint
+    description: "ID pre_order liên quan (nếu đang ở bước pre_order)."
+    semantics: [id, pre_order, join_key]
+    pii: false
+
+  order_id:
+    data_type: bigint
+    description: "ID đơn hàng liên quan (nếu đã tạo order)."
+    semantics: [id, order, join_key]
+    pii: false
+
+  bank_id:
+    data_type: bigint
+    description: "ID ngân hàng mà khách đang sử dụng."
+    semantics: [id, bank]
+    pii: false
+
+  device_type:
+    data_type: varchar
+    description: "Loại thiết bị (ví dụ: ANDROID, IOS, WEB...)."
+    semantics: [category, device, type]
+
+  device_name:
+    data_type: varchar
+    description: "Tên thiết bị (model, device name)."
+    semantics: [device, name]
+    pii: true
+    sensitive: true
+
+  emei:
+    data_type: varchar
+    description: "IMEI/định danh thiết bị (nếu có)."
+    semantics: [device, identifier, imei]
+    pii: true
+    sensitive: true
+
+  latitude:
+    data_type: varchar
+    description: "Vĩ độ vị trí người dùng (nếu có)."
+    semantics: [location, latitude]
+    pii: true
+    sensitive: true
+
+  longitude:
+    data_type: varchar
+    description: "Kinh độ vị trí người dùng (nếu có)."
+    semantics: [location, longitude]
+    pii: true
+    sensitive: true
+
+  os_version:
+    data_type: varchar
+    description: "Phiên bản hệ điều hành trên thiết bị."
+    semantics: [device, os, version]
+
+  ip_address:
+    data_type: varchar
+    description: "Địa chỉ IP của thiết bị khi ghi nhận tracking."
+    semantics: [network, ip_address]
+    pii: true
+    sensitive: true
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm ghi nhận tracking."
+    semantics: [date, event_time]
+
+  sdk_version:
+    data_type: varchar
+    description: "Phiên bản SDK/app của VNFilm/VNPAY đang chạy trên thiết bị."
+    semantics: [sdk, version, app]
+
+  bank_identity:
+    data_type: varchar
+    description: "Định danh người dùng phía ngân hàng (raw)."
+    semantics: [user_identity, bank, raw]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    description: "Định danh ngân hàng đã hash, dùng join/RLS để tránh lộ PII."
+    semantics: [user_identity, bank, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+    forbidden_columns:
+      - bank_identity
+      - ip_address
+      - emei
+
+sample_questions:
+  - "Phân bổ thiết bị (device_type) theo thời gian trong 7 ngày gần nhất?"
+  - "Tỷ lệ session ANDROID vs IOS khi đặt vé?"
+  - "Có bao nhiêu tracking theo từng phiên bản SDK trong tháng này?"
+  - "Phân bố tracking theo ngân hàng (bank_id) và OS?"
+
+sample_queries:
+  - description: "Phân bổ số tracking theo device_type trong 7 ngày gần nhất"
+    sql: |
+      SELECT
+        device_type,
+        date_trunc('day', created_date) AS day,
+        COUNT(*) AS total_tracking
+      FROM lakehouse.lh_vnfilm_v2.customer_tracking
+      WHERE created_date >= date_trunc('day', current_date) - interval '6' day
+      GROUP BY device_type, day
+      ORDER BY day DESC, total_tracking DESC;
+
+  - description: "Thống kê số tracking theo SDK version"
+    sql: |
+      SELECT
+        sdk_version,
+        COUNT(*) AS total_tracking
+      FROM lakehouse.lh_vnfilm_v2.customer_tracking
+      WHERE created_date >= date_trunc('month', current_date) - interval '2' month
+      GROUP BY sdk_version
+      ORDER BY total_tracking DESC
+      LIMIT 200;
+
+  - description: "Phân bổ tracking theo ngân hàng và loại thiết bị"
+    sql: |
+      SELECT
+        bank_id,
+        device_type,
+        COUNT(*) AS total_tracking
+      FROM lakehouse.lh_vnfilm_v2.customer_tracking
+      WHERE created_date >= date_trunc('day', current_date) - interval '29' day
+      GROUP BY bank_id, device_type
+      ORDER BY total_tracking DESC
+      LIMIT 200;

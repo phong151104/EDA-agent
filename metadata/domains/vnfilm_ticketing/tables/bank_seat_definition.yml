@@ -1,0 +1,153 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: bank_seat_definition
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension định nghĩa ghế theo ngân hàng (bank_seat_definition)"
+grain: "1 dòng = 1 định nghĩa ghế theo từng ngân hàng + vendor"
+
+description: >
+  Bảng danh mục định nghĩa ghế được các ngân hàng và vendor sử dụng để mapping seat type,
+  phục vụ đối soát và phân tích các ưu đãi/logic liên quan đến ghế theo từng ngân hàng.
+  Thường được join với bảng orders qua bank_id hoặc vendor_id để tra cứu thông tin ghế tương ứng.
+
+tags:
+  - dim
+  - seat_definition
+  - bank
+  - vendor
+  - mapping
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Ngân hàng áp dụng seat definition."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor sử dụng seat definition tương ứng."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "bank_id cho phân tích theo ngân hàng"
+  - "vendor_id cho phân tích theo vendor"
+  - "mapping_type cho phân nhóm định nghĩa ghế"
+  - "status cho lọc theo trạng thái active/inactive"
+
+concepts:
+  - name: seat_definition
+    synonyms: ["định nghĩa ghế", "loại ghế", "seat type", "seat mapping"]
+
+  - name: bank
+    synonyms: ["ngân hàng", "bank"]
+
+  - name: vendor
+    synonyms: ["merchant", "đối tác", "vendor"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID định nghĩa ghế"
+    description: "Khóa chính của bảng (seat definition)."
+    semantics: [id, primary, seat_definition]
+    pii: false
+
+  bank_id:
+    data_type: bigint
+    description: "ID ngân hàng."
+    semantics: [id, bank]
+    pii: false
+
+  seat_definition_id:
+    data_type: bigint
+    description: "ID định nghĩa ghế chuẩn (internal mapping)."
+    semantics: [id, seat_definition]
+
+  mapping_type:
+    data_type: varchar
+    description: "Loại mapping ghế (ví dụ: NORMAL, VIP, COUPLE...)."
+    semantics: [category, seat, mapping]
+
+  status:
+    data_type: varchar
+    description: "Trạng thái định nghĩa (ACTIVE/INACTIVE)."
+    semantics: [status]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo bản ghi."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    description: "Người tạo (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm bản ghi được cập nhật."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "Người cập nhật."
+    semantics: [user_identity, modifier, raw]
+    pii: true
+    sensitive: true
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor sử dụng seat definition."
+    semantics: [id, vendor]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns: []
+
+sample_questions:
+  - "Ngân hàng nào đang sử dụng seat definition loại VIP?"
+  - "Danh sách seat definition đang ACTIVE cho từng bank?"
+  - "Vendor nào có seat definition mapping dạng NORMAL?"
+  - "Thống kê số lượng seat definition theo mapping_type?"
+
+sample_queries:
+  - description: "Thống kê số lượng seat definition theo ngân hàng"
+    sql: |
+      SELECT
+        bank_id,
+        COUNT(*) AS total_seat_definitions
+      FROM lakehouse.lh_vnfilm_v2.bank_seat_definition
+      GROUP BY bank_id
+      ORDER BY total_seat_definitions DESC;
+
+  - description: "Danh sách seat definition ACTIVE theo vendor"
+    sql: |
+      SELECT
+        vendor_id,
+        mapping_type,
+        status
+      FROM lakehouse.lh_vnfilm_v2.bank_seat_definition
+      WHERE status = 'ACTIVE'
+      ORDER BY vendor_id, mapping_type;

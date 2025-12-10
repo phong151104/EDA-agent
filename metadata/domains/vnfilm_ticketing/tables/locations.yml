@@ -1,0 +1,170 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: locations
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension địa điểm/khu vực (locations)"
+grain: "1 dòng = 1 địa điểm/khu vực (một promotion_location_code / city)"
+
+description: >
+  Bảng danh mục địa điểm/khu vực dùng trong hệ thống vnfilm. Mỗi bản ghi biểu diễn một
+  location với mã promotion_location_code, tên thành phố, toạ độ (latitude/longitude),
+  trạng thái hoạt động và thông tin tạo/cập nhật. Thường được dùng để phân tích theo vùng,
+  thành phố hoặc để lọc các chương trình khuyến mại theo khu vực.
+
+tags:
+  - dim
+  - location
+  - city
+  - geo
+  - promotion_location
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys: []  # nếu sau này có bảng promotion_location riêng thì bổ sung FK từ promotion_location_code
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status để lọc các địa điểm đang ACTIVE"
+  - "city_name để lọc theo tên thành phố"
+  - "promotion_location_code để join/tra cứu theo mã khu vực"
+  - "latitude/longitude để lọc các location có thông tin toạ độ"
+
+concepts:
+  - name: location
+    synonyms: ["địa điểm", "khu vực", "location", "zone", "area"]
+
+  - name: city
+    synonyms: ["thành phố", "city"]
+
+  - name: promotion_location
+    synonyms: ["khu vực khuyến mại", "promotion location", "location code"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID địa điểm"
+    description: "Khóa chính của bảng locations."
+    semantics: [id, primary, location]
+    pii: false
+
+  display_order:
+    data_type: integer
+    business_name: "Thứ tự hiển thị"
+    description: "Thứ tự sắp xếp location trong UI hoặc danh sách."
+    semantics: [order, display]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái địa điểm"
+    description: "Trạng thái hoạt động của location (ví dụ: ACTIVE, INACTIVE)."
+    semantics: [status, location]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo"
+    description: "Thời điểm bản ghi location được tạo."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm cập nhật"
+    description: "Thời điểm bản ghi location được cập nhật gần nhất."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/service cập nhật bản ghi location."
+    semantics: [user_identity, modifier, raw]
+    pii: true
+    sensitive: true
+
+  promotion_location_code:
+    data_type: varchar
+    business_name: "Mã khu vực khuyến mại"
+    description: "Mã code đại diện cho khu vực/location, dùng để mapping với các logic khuyến mại."
+    semantics: [code, location, promotion_location]
+
+  city_name:
+    data_type: varchar
+    business_name: "Tên thành phố"
+    description: "Tên thành phố/khu vực hiển thị."
+    semantics: [city, name, location]
+
+  latitude:
+    data_type: decimal(38,18)
+    business_name: "Vĩ độ"
+    description: "Toạ độ vĩ độ (latitude) của location."
+    semantics: [geo, latitude]
+
+  longitude:
+    data_type: decimal(38,18)
+    business_name: "Kinh độ"
+    description: "Toạ độ kinh độ (longitude) của location."
+    semantics: [geo, longitude]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo bản ghi location."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Hash người tạo"
+    description: "Hash của created_by (phục vụ RLS / ẩn danh)."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Danh sách các location đang ACTIVE là gì?"
+  - "Có bao nhiêu địa điểm/chi nhánh theo từng thành phố?"
+  - "Các promotion_location_code hiện có và city_name tương ứng?"
+  - "Những location nào có đầy đủ toạ độ (latitude/longitude)?"
+
+sample_queries:
+  - description: "Danh sách location đang ACTIVE theo thành phố"
+    sql: |
+      SELECT
+        city_name,
+        promotion_location_code,
+        status,
+        latitude,
+        longitude
+      FROM lakehouse.lh_vnfilm_v2.locations
+      WHERE status = 'ACTIVE'
+      ORDER BY city_name, promotion_location_code
+      LIMIT 200;
+
+  - description: "Thống kê số lượng location theo city_name"
+    sql: |
+      SELECT
+        city_name,
+        COUNT(*) AS total_locations
+      FROM lakehouse.lh_vnfilm_v2.locations
+      GROUP BY city_name
+      ORDER BY total_locations DESC;

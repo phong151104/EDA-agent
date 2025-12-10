@@ -1,0 +1,151 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: cinema_favourite
+domain: vnfilm_ticketing
+
+table_type: fact
+business_name: "Bảng đánh dấu rạp yêu thích của người dùng (cinema_favourite)"
+grain: "1 dòng = 1 rạp yêu thích của 1 người dùng (theo ngân hàng/vendor)"
+
+description: >
+  Bảng cinema_favourite lưu thông tin rạp mà người dùng (được định danh bằng bank_identity_hash)
+  đã đánh dấu là yêu thích. Dữ liệu này thường được dùng để phân tích hành vi người dùng,
+  tối ưu đề xuất rạp, hoặc cá nhân hóa trải nghiệm đặt vé.
+
+tags:
+  - fact
+  - user_preference
+  - cinema
+  - favourite
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: bank_id
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Ngân hàng của người dùng. Dùng để phân tích theo từng bank."
+
+  - column: cinema_id
+    references_table: "lakehouse.lh_vnfilm_v2.cinema"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Rạp mà người dùng đánh dấu yêu thích."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor/hệ thống rạp tương ứng."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "bank_identity_hash để lọc theo người dùng (dạng hash, không nhạy cảm)"
+  - "cinema_id hoặc vendor_id để phân tích theo rạp/hệ thống rạp"
+  - "created_date cho phân tích theo thời gian yêu thích rạp"
+
+concepts:
+  - name: cinema_favourite
+    synonyms: ["rạp yêu thích", "favourite cinema", "favorite cinema", "ưu tiên rạp"]
+  - name: user
+    synonyms: ["người dùng", "user", "customer", "khách hàng"]
+  - name: cinema
+    synonyms: ["rạp", "cinema", "theater"]
+  - name: vendor
+    synonyms: ["hệ thống rạp", "nhà cung cấp", "vendor"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID dòng yêu thích"
+    description: "Khóa chính."
+    semantics: [id, primary, favourite]
+    pii: false
+
+  bank_id:
+    data_type: bigint
+    description: "ID ngân hàng."
+    semantics: [id, bank]
+    pii: false
+
+  cinema_id:
+    data_type: bigint
+    description: "ID rạp mà người dùng yêu thích."
+    semantics: [id, cinema]
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor/hệ thống rạp."
+    semantics: [id, vendor]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm người dùng đánh dấu rạp yêu thích."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    description: "Người/service tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  bank_identity:
+    data_type: varchar
+    description: "Định danh người dùng phía ngân hàng (PII, không nên trả về)."
+    semantics: [user_identity, bank, raw]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    description: "Hash định danh người dùng (an toàn sử dụng cho phân tích, join được với orders)."
+    semantics: [user_identity, bank, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+    forbidden_columns:
+      - bank_identity
+      - created_by
+
+sample_questions:
+  - "Top rạp được đánh dấu yêu thích nhiều nhất trong tháng này?"
+  - "Người dùng có bank_identity_hash X yêu thích những rạp nào?"
+  - "Hệ thống rạp nào được nhiều người đánh dấu yêu thích nhất?"
+  - "Xu hướng rạp yêu thích theo từng vendor trong 6 tháng gần đây?"
+
+sample_queries:
+  - description: "Top rạp yêu thích theo số lượng người dùng"
+    sql: |
+      SELECT
+        cinema_id,
+        COUNT(*) AS favourite_count
+      FROM lakehouse.lh_vnfilm_v2.cinema_favourite
+      WHERE created_date >= date_trunc('month', current_date)
+      GROUP BY cinema_id
+      ORDER BY favourite_count DESC
+      LIMIT 20;
+
+  - description: "Danh sách rạp yêu thích của một người dùng"
+    sql: |
+      SELECT
+        cinema_id,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.cinema_favourite
+      WHERE bank_identity_hash = '{{user_hash}}'
+      ORDER BY created_date DESC
+      LIMIT 50;

@@ -1,0 +1,189 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: concession
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Danh mục concession (bắp nước, combo…) theo vendor & rạp"
+grain: "1 dòng = 1 concession do vendor/rạp cung cấp"
+
+description: >
+  Bảng danh mục concession (combo bắp nước, đồ ăn uống, sản phẩm phụ) được sử dụng trong hệ thống vé.
+  Dữ liệu bao gồm tên, mô tả (VI/EN), ảnh, giá, vendor quản lý, và mapping sang concession của vendor.
+  Thường được dùng để join với bảng đơn hàng để phân tích doanh thu concession theo rạp, vendor và sản phẩm.
+
+tags:
+  - dim
+  - concession
+  - product
+  - food_beverage
+  - vendor
+  - cinema
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor cung cấp concession."
+
+  - column: cinema_id
+    references_table: "lakehouse.lh_vnfilm_v2.cinema"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Rạp/cụm rạp cung cấp concession."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status để lọc concession còn/không còn hoạt động"
+  - "vendor_id để phân tích theo hệ thống rạp"
+  - "cinema_id cho phân tích theo rạp cụ thể"
+  - "price cho phân tích phân khúc giá"
+
+concepts:
+  - name: concession
+    synonyms: ["bắp", "nước", "combo", "đồ ăn uống", "concession", "snack"]
+
+  - name: cinema
+    synonyms: ["rạp", "cinema", "theater"]
+
+  - name: vendor
+    synonyms: ["nhà cung cấp", "rạp", "merchant", "vendor"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID concession"
+    description: "Khóa chính cho mỗi concession."
+    semantics: [id, primary, concession]
+    pii: false
+
+  vendor_concession_id:
+    data_type: varchar
+    description: "ID concession phía vendor."
+    semantics: [external_id, concession, vendor]
+
+  name_vi:
+    data_type: varchar
+    description: "Tên concession (VI)."
+    semantics: [name, concession, vi]
+
+  name_en:
+    data_type: varchar
+    description: "Tên concession (EN)."
+    semantics: [name, concession, en]
+
+  image:
+    data_type: varchar
+    description: "URL ảnh minh họa concession."
+    semantics: [url, image, concession]
+
+  description_vi:
+    data_type: varchar
+    description: "Mô tả concession bằng tiếng Việt."
+    semantics: [text, description, concession, vi]
+
+  description_en:
+    data_type: varchar
+    description: "Mô tả concession bằng tiếng Anh."
+    semantics: [text, description, concession, en]
+
+  price:
+    data_type: decimal(38,18)
+    description: "Giá concession."
+    semantics: [amount, price, concession]
+    unit: VND
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor cung cấp concession."
+    semantics: [id, vendor]
+
+  cinema_id:
+    data_type: bigint
+    description: "ID rạp cung cấp concession."
+    semantics: [id, cinema]
+
+  vendor_cinema_id:
+    data_type: varchar
+    description: "Mã rạp phía vendor."
+    semantics: [id, vendor, cinema, external_id]
+
+  status:
+    data_type: varchar
+    description: "Trạng thái hoạt động của concession (ACTIVE/INACTIVE)."
+    semantics: [status]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo bản ghi."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    description: "Người tạo bản ghi (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm cập nhật bản ghi."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "Người cập nhật bản ghi."
+    semantics: [user_identity, modifier, raw]
+    pii: true
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Danh mục concession đang ACTIVE theo từng rạp?"
+  - "Giá concession trung bình theo vendor là bao nhiêu?"
+  - "Top concession được bán nhiều nhất (khi join orders)?"
+  - "Concession nào thuộc vendor X và rạp Y?"
+
+sample_queries:
+  - description: "Danh sách concession ACTIVE theo từng vendor"
+    sql: |
+      SELECT
+        vendor_id,
+        name_vi,
+        price,
+        status
+      FROM lakehouse.lh_vnfilm_v2.concession
+      WHERE status = 'ACTIVE'
+      ORDER BY vendor_id, price DESC
+      LIMIT 200;
+
+  - description: "Thống kê số concession theo rạp"
+    sql: |
+      SELECT
+        cinema_id,
+        COUNT(*) AS total_concessions
+      FROM lakehouse.lh_vnfilm_v2.concession
+      GROUP BY cinema_id
+      ORDER BY total_concessions DESC
+      LIMIT 200;

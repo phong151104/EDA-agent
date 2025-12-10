@@ -1,0 +1,222 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: notify_ott
+domain: vnfilm_ticketing
+
+table_type: fact_log
+business_name: "Log gửi thông báo OTT cho đơn hàng (notify_ott)"
+grain: "1 dòng = 1 sự kiện gửi thông báo OTT (liên quan order hoặc order_refund nếu có)"
+
+description: >
+  Bảng log lưu lại các thông báo OTT (in-app / push / SMS gateway theo thiết kế hệ thống)
+  được gửi từ hệ thống liên quan đến đơn hàng hoặc giao dịch hoàn tiền. Bao gồm loại thông báo,
+  nội dung, trạng thái, response từ server, thông tin định danh ngân hàng và các timestamp
+  tạo/cập nhật. Dùng để phân tích tần suất gửi thông báo, lỗi khi gửi và tracing theo order/bank_identity_hash.
+
+tags:
+  - fact
+  - log
+  - notification
+  - ott
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: order_id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Thông báo thuộc về đơn hàng nào (nếu có)."
+
+  - column: order_refund_id
+    references_table: "lakehouse.lh_vnfilm_v2.order_refund"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Thông báo liên quan tới giao dịch hoàn tiền (nếu có)."
+
+  - column: original_id
+    references_table: "lakehouse.lh_vnfilm_v2.notify_ott"
+    references_column: "id"
+    relation: "self_reference"
+    description: "Tham chiếu tới notify_ott gốc trong trường hợp retry."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "created_date cho phân tích theo thời gian gửi thông báo"
+  - "order_id để truy vấn theo đơn hàng cụ thể"
+  - "type để phân tích theo loại thông báo"
+  - "status để lọc thông báo gửi thành công/thất bại"
+  - "bank_identity_hash để phân tích theo người dùng/ngân hàng mà vẫn ẩn danh"
+
+concepts:
+  - name: notification
+    synonyms: ["thông báo", "notify", "notification", "OTT", "in-app", "push"]
+
+  - name: order
+    synonyms: ["đơn hàng", "order", "transaction"]
+
+  - name: refund
+    synonyms: ["refund", "hoàn tiền"]
+
+  - name: bank_identity
+    synonyms: ["định danh ngân hàng", "bank identity", "user bank id"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi log OTT"
+    description: "Khóa chính của notify_ott."
+    semantics: [id, primary, log]
+    pii: false
+
+  order_id:
+    data_type: bigint
+    business_name: "ID đơn hàng"
+    description: "Thông báo thuộc về đơn hàng nào."
+    semantics: [id, order]
+    pii: false
+
+  order_refund_id:
+    data_type: bigint
+    business_name: "ID refund"
+    description: "Thông báo liên quan tới giao dịch hoàn tiền."
+    semantics: [id, refund]
+    pii: false
+
+  original_id:
+    data_type: bigint
+    business_name: "ID thông báo gốc"
+    description: "Tham chiếu tới notify_ott ban đầu trong trường hợp retry."
+    semantics: [id, reference]
+
+  type:
+    data_type: varchar
+    business_name: "Loại thông báo"
+    description: "Loại OTT notification (ví dụ: CONFIRMATION, REFUND, ERROR...)."
+    semantics: [category, notification, type]
+
+  content:
+    data_type: varchar
+    business_name: "Nội dung thông báo"
+    description: "Content dạng text/raw của thông báo."
+    semantics: [text, notification, content]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái gửi thông báo"
+    description: "Trạng thái gửi: SUCCESS / FAIL / PENDING."
+    semantics: [status, notification]
+
+  server_response_data:
+    data_type: varchar
+    business_name: "Response từ server OTT"
+    description: "Payload/phản hồi từ server khi gửi notification."
+    semantics: [text, notification, server_response]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo"
+    description: "Thời điểm hệ thống ghi nhận log thông báo."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm cập nhật"
+    description: "Thời điểm cập nhật bản ghi."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/service cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  bank_identity:
+    data_type: varchar
+    business_name: "Định danh ngân hàng (raw)"
+    description: "Định danh người dùng phía ngân hàng (raw) nếu lưu trực tiếp."
+    semantics: [user_identity, bank, raw]
+    pii: true
+    sensitive: true
+
+  bank_identity_hash:
+    data_type: varchar
+    business_name: "Hash định danh ngân hàng"
+    description: "Hash ẩn danh của bank_identity, dùng join/RLS."
+    semantics: [user_identity, bank, hash]
+    pii: false
+    sensitive: true
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo bản ghi log."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Hash người tạo"
+    description: "Hash ẩn danh của created_by."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - bank_identity
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Có bao nhiêu thông báo OTT gửi thất bại trong ngày hôm qua?"
+  - "Tỉ lệ gửi OTT thành công theo từng loại thông báo?"
+  - "Những đơn hàng nào đã được gửi thông báo OTT xác nhận?"
+  - "Số lượng thông báo OTT theo bank_identity_hash trong 7 ngày gần nhất?"
+  - "Số lần retry (original_id không null) của OTT notification?"
+
+sample_queries:
+  - description: "Đếm OTT notification gửi thất bại trong 24h qua"
+    sql: |
+      SELECT COUNT(*) AS failed_notifications
+      FROM lakehouse.lh_vnfilm_v2.notify_ott
+      WHERE status = 'FAIL'
+        AND created_date >= now() - interval '1 day';
+
+  - description: "Thống kê số OTT notification theo loại"
+    sql: |
+      SELECT
+        type,
+        COUNT(*) AS total_notifications
+      FROM lakehouse.lh_vnfilm_v2.notify_ott
+      GROUP BY type
+      ORDER BY total_notifications DESC;
+
+  - description: "Lịch sử OTT notification của một đơn hàng"
+    sql: |
+      SELECT
+        id,
+        type,
+        status,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.notify_ott
+      WHERE order_id = :order_id
+      ORDER BY created_date DESC
+      LIMIT 200;

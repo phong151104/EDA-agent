@@ -1,0 +1,302 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: film
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension thông tin phim (film)"
+grain: "1 dòng = 1 phim duy nhất trong hệ thống"
+
+description: >
+  Bảng danh mục phim được dùng trong hệ thống. Chứa các thuộc tính chi tiết như tên phim (VI/EN),
+  trailer, poster, banner, mô tả, thể loại, quốc gia, thời lượng, ngôn ngữ, PG rating, diễn viên,
+  đạo diễn, ngày phát hành, và thông tin mapping sang vendor.
+  Đây là bảng cơ sở dùng để phân tích doanh thu, số vé, suất chiếu theo từng phim.
+
+tags:
+  - dim
+  - film
+  - movie
+  - catalog
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor sở hữu hoặc cung cấp dữ liệu phim tương ứng."
+
+  - column: status_id
+    references_table: "lakehouse.lh_vnfilm_v2.status"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Trạng thái phim (đang chiếu, ngừng chiếu...)."
+
+  - column: category_en
+    references_table: "lakehouse.lh_vnfilm_v2.film_category"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Mapping thể loại phim bản EN."
+
+  - column: country_en
+    references_table: "lakehouse.lh_vnfilm_v2.country"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Mapping quốc gia phim bản EN."
+
+time_columns:
+  - publish_date
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "publish_date để phân tích theo ngày phát hành phim"
+  - "category, pg_rating cho phân tích theo thể loại/phân loại độ tuổi"
+  - "vendor_id cho lọc theo nguồn vendor"
+  - "language để phân tích theo ngôn ngữ phim"
+
+concepts:
+  - name: film
+    synonyms: ["phim", "movie", "film", "title"]
+
+  - name: category
+    synonyms: ["thể loại", "genre", "category"]
+
+  - name: rating
+    synonyms: ["PG", "rating", "độ tuổi"]
+
+  - name: vendor
+    synonyms: ["nhà cung cấp", "đối tác", "vendor"]
+
+columns:
+
+  id:
+    data_type: bigint
+    business_name: "ID phim"
+    description: "Mã định danh duy nhất của phim."
+    semantics: [id, primary, film]
+    pii: false
+
+  name_vi:
+    data_type: varchar
+    description: "Tên phim tiếng Việt."
+    semantics: [name, film, vi]
+
+  name_en:
+    data_type: varchar
+    description: "Tên phim tiếng Anh."
+    semantics: [name, film, en]
+
+  trailer_url:
+    data_type: varchar
+    description: "URL trailer phim."
+    semantics: [url, trailer]
+
+  poster_url:
+    data_type: varchar
+    description: "URL poster phim."
+    semantics: [url, poster]
+
+  banner_url:
+    data_type: varchar
+    description: "URL banner phim."
+    semantics: [url, banner]
+
+  country:
+    data_type: varchar
+    description: "Quốc gia phim (raw text)."
+    semantics: [country, film]
+
+  category:
+    data_type: varchar
+    description: "Thể loại phim (raw text)."
+    semantics: [category, film]
+
+  display_order:
+    data_type: integer
+    description: "Thứ tự ưu tiên hiển thị phim."
+    semantics: [order, display]
+
+  duration:
+    data_type: integer
+    description: "Thời lượng phim (phút)."
+    semantics: [duration, film]
+    unit: minute
+
+  language:
+    data_type: varchar
+    description: "Ngôn ngữ phim."
+    semantics: [language, film]
+
+  description_vi:
+    data_type: varchar
+    description: "Mô tả phim tiếng Việt."
+    semantics: [text, description, vi]
+
+  description_en:
+    data_type: varchar
+    description: "Mô tả phim tiếng Anh."
+    semantics: [text, description, en]
+
+  publish_date:
+    data_type: timestamp(6)
+    description: "Ngày phát hành phim."
+    semantics: [date, publish_time]
+
+  pg_rating:
+    data_type: varchar
+    description: "Phân loại độ tuổi PG."
+    semantics: [rating, age_limit]
+
+  age:
+    data_type: integer
+    description: "Độ tuổi khuyến nghị."
+    semantics: [age, film]
+
+  keyword:
+    data_type: varchar
+    description: "Các từ khóa liên quan đến phim."
+    semantics: [keyword, search]
+
+  director:
+    data_type: varchar
+    description: "Tên đạo diễn."
+    semantics: [director, film]
+
+  actors:
+    data_type: varchar
+    description: "Danh sách diễn viên (raw text)."
+    semantics: [actors, film]
+
+  status_id:
+    data_type: bigint
+    description: "Trạng thái phim."
+    semantics: [status, id]
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor cung cấp phim."
+    semantics: [vendor, id]
+
+  mapping_id:
+    data_type: bigint
+    description: "ID mapping nội bộ."
+    semantics: [mapping, internal]
+
+  vendor_film_id:
+    data_type: bigint
+    description: "ID phim phía vendor."
+    semantics: [vendor, film, external_id]
+
+  vendor_film_name_vi:
+    data_type: varchar
+    description: "Tên phim từ vendor (VI)."
+    semantics: [vendor, film, name, vi]
+
+  vendor_film_name_en:
+    data_type: varchar
+    description: "Tên phim từ vendor (EN)."
+    semantics: [vendor, film, name, en]
+
+  mapping_status:
+    data_type: varchar
+    description: "Trạng thái mapping phim."
+    semantics: [mapping, status]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo bản ghi."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    description: "Người tạo (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm cập nhật bản ghi."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "Người chỉnh sửa (raw)."
+    semantics: [user_identity, modifier, raw]
+    pii: true
+    sensitive: true
+
+  alias_id:
+    data_type: integer
+    description: "Alias ID từ hệ thống khác (nếu có)."
+    semantics: [alias, id]
+
+  category_en:
+    data_type: integer
+    description: "Mapping thể loại EN."
+    semantics: [category, mapping]
+
+  language_en:
+    data_type: integer
+    description: "Mapping ngôn ngữ EN."
+    semantics: [language, mapping]
+
+  country_en:
+    data_type: integer
+    description: "Mapping quốc gia EN."
+    semantics: [country, mapping]
+
+  modified_by_hash:
+    data_type: varchar
+    description: "Hash của user cập nhật."
+    semantics: [hash, modifier]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "publish_date"
+    allowed_time_columns:
+      - publish_date
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Danh sách phim đang chiếu theo PG rating?"
+  - "Top phim mới phát hành trong 30 ngày gần nhất?"
+  - "Lọc phim theo thể loại và quốc gia?"
+  - "Các phim thuộc vendor X?"
+
+sample_queries:
+  - description: "Lấy danh sách phim phát hành trong 30 ngày gần nhất"
+    sql: |
+      SELECT
+        id,
+        name_vi,
+        publish_date,
+        category
+      FROM lakehouse.lh_vnfilm_v2.film
+      WHERE publish_date >= current_date - interval '30' day
+      ORDER BY publish_date DESC
+      LIMIT 200;
+
+  - description: "Thống kê phim theo thể loại"
+    sql: |
+      SELECT
+        category,
+        COUNT(*) AS total_films
+      FROM lakehouse.lh_vnfilm_v2.film
+      GROUP BY category
+      ORDER BY total_films DESC;

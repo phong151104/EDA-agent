@@ -1,0 +1,229 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: cinema
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension thông tin rạp chiếu (cinema)"
+grain: "1 dòng = 1 rạp chiếu phim (cinema) thuộc một branch/vendor"
+
+description: >
+  Bảng danh mục rạp (cinema) chứa thông tin tên, địa chỉ, mô tả, vị trí địa lý (latitude/longitude),
+  vendor sở hữu, branch, thứ tự hiển thị và trạng thái hoạt động.
+  Được dùng để phân tích doanh thu/đơn hàng theo từng rạp hoặc nhóm rạp.
+
+tags:
+  - dim
+  - cinema
+  - location
+  - vendor
+  - branch
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor/hệ thống rạp mà cinema thuộc về."
+
+  - column: branch_id
+    references_table: "lakehouse.lh_vnfilm_v2.branch"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Branch/chi nhánh mà cinema thuộc về."
+
+  - column: location_id
+    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vị trí/khu vực địa lý được mapping cho cinema."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status cho lọc theo rạp đang hoạt động (ACTIVE)"
+  - "vendor_id để phân tích theo hệ thống rạp"
+  - "branch_id cho phân tích theo cụm rạp"
+  - "location_id cho phân tích theo khu vực"
+  - "keyword để lọc tìm kiếm theo nhiều thuộc tính"
+
+concepts:
+  - name: cinema
+    synonyms: ["rạp", "rap", "cinema", "theater", "cụm rạp", "phòng vé"]
+
+  - name: vendor
+    synonyms: ["hệ thống rạp", "nhà cung cấp", "vendor", "merchant"]
+
+  - name: location
+    synonyms: ["khu vực", "tỉnh thành", "location", "region"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID rạp"
+    description: "Khóa chính của bảng rạp (cinema)."
+    semantics: [id, primary, cinema]
+    pii: false
+
+  name_vi:
+    data_type: varchar
+    business_name: "Tên rạp (TIẾNG VIỆT)"
+    description: "Tên rạp hiển thị tiếng Việt."
+    semantics: [name, cinema, vi]
+
+  name_en:
+    data_type: varchar
+    business_name: "Tên rạp (TIẾNG ANH)"
+    description: "Tên rạp hiển thị tiếng Anh."
+    semantics: [name, cinema, en]
+
+  keyword:
+    data_type: varchar
+    description: "Keyword tìm kiếm rạp."
+    semantics: [keyword, search]
+
+  logo:
+    data_type: varchar
+    description: "URL logo rạp."
+    semantics: [url, image, cinema]
+
+  address:
+    data_type: varchar
+    description: "Địa chỉ rạp."
+    semantics: [address, cinema]
+
+  description_vi:
+    data_type: varchar
+    description: "Mô tả rạp (tiếng Việt)."
+    semantics: [description, cinema, vi]
+
+  description_en:
+    data_type: varchar
+    description: "Mô tả rạp (tiếng Anh)."
+    semantics: [description, cinema, en]
+
+  latitude:
+    data_type: decimal(38,18)
+    description: "Vĩ độ của rạp."
+    semantics: [geo, latitude]
+
+  longitude:
+    data_type: decimal(38,18)
+    description: "Kinh độ của rạp."
+    semantics: [geo, longitude]
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor sở hữu rạp."
+    semantics: [id, vendor, join_key]
+
+  display_order:
+    data_type: decimal(38,18)
+    description: "Thứ tự hiển thị ưu tiên."
+    semantics: [order, display]
+
+  branch_id:
+    data_type: bigint
+    description: "ID chi nhánh/cụm rạp."
+    semantics: [id, branch]
+
+  location_id:
+    data_type: bigint
+    description: "ID khu vực."
+    semantics: [id, location]
+
+  vendor_cinema_id:
+    data_type: varchar
+    description: "Mã rạp phía vendor."
+    semantics: [external_id, vendor, cinema]
+
+  status:
+    data_type: varchar
+    description: "Trạng thái hoạt động (ACTIVE/INACTIVE)."
+    semantics: [status, cinema]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo rạp."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    description: "Người tạo bản ghi."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm cập nhật gần nhất."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "User/service cập nhật."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  phone:
+    data_type: varchar
+    description: "Số điện thoại liên hệ rạp."
+    semantics: [phone, contact]
+    pii: true
+
+  phone_hash:
+    data_type: varchar
+    description: "Hash số điện thoại liên hệ rạp."
+    semantics: [phone, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - phone
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Danh sách rạp đang hoạt động theo từng vendor?"
+  - "Top rạp có số lượng giao dịch cao nhất?"
+  - "Tìm rạp gần vị trí địa lý cụ thể?"
+  - "Lọc các rạp theo khu vực/location_id?"
+  - "Tên tiếng Việt và tiếng Anh của rạp có mã X?"
+
+sample_queries:
+  - description: "Danh sách rạp ACTIVE theo từng vendor"
+    sql: |
+      SELECT
+        vendor_id,
+        id AS cinema_id,
+        name_vi,
+        status
+      FROM lakehouse.lh_vnfilm_v2.cinema
+      WHERE status = 'ACTIVE'
+      ORDER BY vendor_id, name_vi;
+
+  - description: "Thống kê số rạp theo vendor"
+    sql: |
+      SELECT
+        vendor_id,
+        COUNT(*) AS total_cinemas
+      FROM lakehouse.lh_vnfilm_v2.cinema
+      GROUP BY vendor_id
+      ORDER BY total_cinemas DESC;

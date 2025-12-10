@@ -1,0 +1,125 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: label_location
+domain: vnfilm_ticketing
+
+table_type: bridge
+business_name: "Bridge bảng gán nhãn–địa điểm (label_location)"
+grain: "1 dòng = 1 quan hệ giữa label và location"
+
+description: >
+  Bảng trung gian (bridge table) dùng để ánh xạ giữa nhãn (label) và địa điểm (location).
+  Mỗi bản ghi thể hiện một liên kết giữa label_id và location_id, phục vụ phân loại,
+  gắn tag, hoặc nhóm địa điểm theo các nhãn tùy chỉnh.
+
+tags:
+  - bridge
+  - mapping
+  - label
+  - location
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: label_id
+    references_table: "lakehouse.lh_vnfilm_v2.label"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng label để lấy thông tin nhãn."
+
+  - column: location_id
+    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng location để lấy thông tin địa điểm."
+
+time_columns:
+  - created_date
+
+recommended_filters:
+  - "label_id để lọc các địa điểm thuộc một nhãn"
+  - "location_id để xem các nhãn gán cho một địa điểm"
+  - "created_date cho phân tích theo thời gian tạo mapping"
+
+concepts:
+  - name: label
+    synonyms: ["nhãn", "tag", "label"]
+
+  - name: location
+    synonyms: ["địa điểm", "khu vực", "location"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID ánh xạ label–location"
+    description: "Khóa chính của bảng ánh xạ."
+    semantics: [id, primary, mapping]
+    pii: false
+
+  label_id:
+    data_type: bigint
+    business_name: "ID nhãn"
+    description: "Tham chiếu sang bảng label."
+    semantics: [id, label, join_key]
+    pii: false
+
+  location_id:
+    data_type: bigint
+    business_name: "ID địa điểm"
+    description: "Tham chiếu sang bảng location."
+    semantics: [id, location, join_key]
+    pii: false
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo ánh xạ"
+    description: "Thời điểm quan hệ label–location được tạo."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo ánh xạ."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Một location thuộc những label nào?"
+  - "Danh sách location thuộc label X?"
+  - "Có bao nhiêu location được gán cho mỗi label?"
+  - "Tạo mapping label–location gần đây nhất?"
+
+sample_queries:
+  - description: "Đếm số location theo từng label"
+    sql: |
+      SELECT
+        label_id,
+        COUNT(*) AS total_locations
+      FROM lakehouse.lh_vnfilm_v2.label_location
+      GROUP BY label_id
+      ORDER BY total_locations DESC;
+
+  - description: "Danh sách label gán cho một location"
+    sql: |
+      SELECT
+        ll.location_id,
+        ll.label_id
+      FROM lakehouse.lh_vnfilm_v2.label_location ll
+      WHERE ll.location_id = :location_id
+      ORDER BY ll.label_id
+      LIMIT 200;

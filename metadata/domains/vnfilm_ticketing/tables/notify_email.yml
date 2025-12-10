@@ -1,0 +1,242 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: notify_email
+domain: vnfilm_ticketing
+
+table_type: fact_log
+business_name: "Log gửi email thông báo cho đơn hàng (notify_email)"
+grain: "1 dòng = 1 sự kiện gửi email (liên quan order hoặc order_refund nếu có)"
+
+description: >
+  Bảng log lưu lại các email được gửi từ hệ thống liên quan đến đơn hàng hoặc refund.
+  Bao gồm thông tin loại email, chủ đề, nội dung, người gửi/nhận, response từ server email,
+  và các timestamp tạo/cập nhật. Dùng để phân tích tần suất gửi email, lỗi khi gửi,
+  tracing thông tin qua original_id / order_id / order_refund_id.
+
+tags:
+  - fact
+  - log
+  - notification
+  - email
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: order_id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Email thuộc về đơn hàng nào (nếu có)."
+
+  - column: order_refund_id
+    references_table: "lakehouse.lh_vnfilm_v2.order_refund"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Email thuộc về giao dịch refund nào (nếu có)."
+
+  - column: original_id
+    references_table: "lakehouse.lh_vnfilm_v2.notify_email"
+    references_column: "id"
+    relation: "self_reference"
+    description: "Trường tham chiếu tới bản ghi notify_email gốc (nếu là bản ghi retry)."
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "created_date cho phân tích theo thời gian gửi email"
+  - "order_id để truy vấn theo đơn hàng cụ thể"
+  - "type để phân tích theo loại email"
+  - "status để lọc email gửi thành công/thất bại"
+
+concepts:
+  - name: email
+    synonyms: ["email", "mail", "notify", "notification"]
+
+  - name: order
+    synonyms: ["đơn hàng", "order", "transaction"]
+
+  - name: refund
+    synonyms: ["refund", "hoàn tiền"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID bản ghi log email"
+    description: "Khóa chính của notify_email."
+    semantics: [id, primary, log]
+    pii: false
+
+  order_id:
+    data_type: bigint
+    business_name: "ID đơn hàng"
+    description: "Email thuộc về đơn hàng nào."
+    semantics: [id, order]
+    pii: false
+
+  order_refund_id:
+    data_type: bigint
+    business_name: "ID refund"
+    description: "Email liên quan tới giao dịch hoàn tiền."
+    semantics: [id, refund]
+    pii: false
+
+  original_id:
+    data_type: bigint
+    business_name: "ID email gốc"
+    description: "Tham chiếu tới notify_email ban đầu trong trường hợp retry."
+    semantics: [id, reference]
+
+  type:
+    data_type: varchar
+    business_name: "Loại email"
+    description: "Loại thông báo (ví dụ: CONFIRMATION, REFUND, ERROR...)."
+    semantics: [category, email, type]
+
+  subject:
+    data_type: varchar
+    business_name: "Tiêu đề email"
+    description: "Subject được gửi đi."
+    semantics: [text, email, subject]
+
+  content:
+    data_type: varchar
+    business_name: "Nội dung email"
+    description: "Content dạng text/raw của email."
+    semantics: [text, email, content]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái gửi email"
+    description: "Trạng thái gửi email: SUCCESS / FAIL / PENDING."
+    semantics: [status, email]
+
+  server_response_data:
+    data_type: varchar
+    business_name: "Response từ server email"
+    description: "Payload/phản hồi từ server SMTP/email service."
+    semantics: [text, email, server_response]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo"
+    description: "Thời điểm hệ thống ghi nhận log email."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm cập nhật"
+    description: "Thời điểm cập nhật bản ghi."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/service cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo bản ghi log."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    business_name: "Hash người tạo"
+    description: "Hash của created_by."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+  receiver:
+    data_type: varchar
+    business_name: "Email người nhận"
+    description: "Email address gửi tới."
+    semantics: [email, receiver]
+    pii: true
+    sensitive: true
+
+  receiver_hash:
+    data_type: varchar
+    business_name: "Hash email người nhận"
+    description: "Hash ẩn danh email người nhận."
+    semantics: [email, receiver, hash]
+    pii: false
+    sensitive: true
+
+  sender:
+    data_type: varchar
+    business_name: "Email người gửi"
+    description: "Địa chỉ email người gửi."
+    semantics: [email, sender]
+    pii: true
+    sensitive: true
+
+  sender_hash:
+    data_type: varchar
+    business_name: "Hash người gửi"
+    description: "Hash ẩn danh người gửi."
+    semantics: [email, sender, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - receiver
+      - sender
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Có bao nhiêu email gửi thất bại trong ngày hôm qua?"
+  - "Tỉ lệ gửi email thành công theo từng loại email?"
+  - "Những đơn hàng nào đã được gửi email xác nhận?"
+  - "Danh sách email retry (original_id không null)?"
+  - "Số lượng email theo từng receiver_hash?"
+
+sample_queries:
+  - description: "Đếm email gửi thất bại trong 24h qua"
+    sql: |
+      SELECT COUNT(*) AS failed_emails
+      FROM lakehouse.lh_vnfilm_v2.notify_email
+      WHERE status = 'FAIL'
+        AND created_date >= now() - interval '1 day';
+
+  - description: "Thống kê số email theo loại"
+    sql: |
+      SELECT
+        type,
+        COUNT(*) AS total_emails
+      FROM lakehouse.lh_vnfilm_v2.notify_email
+      GROUP BY type
+      ORDER BY total_emails DESC;
+
+  - description: "Danh sách email gửi cho một đơn hàng"
+    sql: |
+      SELECT
+        id,
+        type,
+        subject,
+        status,
+        created_date
+      FROM lakehouse.lh_vnfilm_v2.notify_email
+      WHERE order_id = :order_id
+      ORDER BY created_date DESC
+      LIMIT 200;

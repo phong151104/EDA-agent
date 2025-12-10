@@ -1,0 +1,223 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: campaign
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension chiến dịch khuyến mại/ưu đãi (campaign)"
+grain: "1 dòng = 1 chiến dịch (campaign) do vendor hoặc VNPAY cung cấp"
+
+description: >
+  Bảng campaign chứa thông tin các chiến dịch khuyến mại/ưu đãi áp dụng cho ghế hoặc concession.
+  Dữ liệu bao gồm thời gian đặt vé, thời gian suất chiếu hợp lệ, số lượng ghế/concession được áp dụng,
+  trạng thái chiến dịch và thông tin tạo/cập nhật. Bảng được join vào orders qua campaign_id hoặc
+  vendor_campaign_id để phân tích hiệu quả chiến dịch.
+
+tags:
+  - dim
+  - campaign
+  - promotion
+  - vendor
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Vendor/hệ thống rạp sở hữu chiến dịch."
+
+time_columns:
+  - booking_date_from
+  - booking_date_to
+  - session_date_from
+  - session_date_to
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "booking_date_from / booking_date_to cho lọc theo thời gian đặt vé áp dụng"
+  - "session_date_from / session_date_to cho lọc theo thời gian suất chiếu hợp lệ"
+  - "status cho lọc chiến dịch ACTIVE/INACTIVE"
+  - "vendor_id cho phân tích hiệu quả chiến dịch theo từng vendor"
+
+concepts:
+  - name: campaign
+    synonyms: ["chiến dịch", "khuyến mại", "ưu đãi", "promotion", "campaign"]
+
+  - name: vendor
+    synonyms: ["đối tác", "nhà cung cấp", "hệ thống rạp", "vendor"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID chiến dịch"
+    description: "Định danh duy nhất của chiến dịch."
+    semantics: [id, primary, campaign]
+    pii: false
+
+  name:
+    data_type: varchar
+    business_name: "Tên chiến dịch"
+    description: "Tên hiển thị của chiến dịch khuyến mại/ưu đãi."
+    semantics: [name, campaign]
+
+  description:
+    data_type: varchar
+    business_name: "Mô tả chiến dịch"
+    description: "Mô tả nội dung, điều kiện hoặc phạm vi áp dụng."
+    semantics: [text, description, campaign]
+
+  vendor_campaign_id:
+    data_type: varchar
+    business_name: "ID chiến dịch phía vendor"
+    description: "Mã chiến dịch theo hệ thống vendor."
+    semantics: [id, campaign, vendor_external]
+
+  vendor_id:
+    data_type: bigint
+    business_name: "ID vendor"
+    description: "Vendor sở hữu chiến dịch."
+    semantics: [id, vendor]
+
+  seat_quantity:
+    data_type: integer
+    business_name: "Số lượng ghế áp dụng"
+    description: "Số lượng ghế tối đa áp dụng chiến dịch."
+    semantics: [quantity, seat]
+
+  concession_quantity:
+    data_type: integer
+    business_name: "Số lượng concession áp dụng"
+    description: "Số lượng đồ ăn/uống được áp dụng ưu đãi."
+    semantics: [quantity, concession]
+
+  booking_date_from:
+    data_type: timestamp(6)
+    business_name: "Thời gian bắt đầu đặt vé hợp lệ"
+    description: "Chiến dịch chỉ áp dụng cho đơn được đặt từ thời điểm này."
+    semantics: [date, booking_time, start]
+
+  booking_date_to:
+    data_type: timestamp(6)
+    business_name: "Thời gian kết thúc đặt vé hợp lệ"
+    description: "Chiến dịch hết hiệu lực đối với việc đặt vé sau thời điểm này."
+    semantics: [date, booking_time, end]
+
+  session_date_from:
+    data_type: timestamp(6)
+    business_name: "Thời gian suất chiếu bắt đầu hợp lệ"
+    description: "Chỉ các suất chiếu từ thời điểm này mới được áp dụng ưu đãi."
+    semantics: [date, session_time, start]
+
+  session_date_to:
+    data_type: timestamp(6)
+    business_name: "Thời gian suất chiếu kết thúc hợp lệ"
+    description: "Suất chiếu sau thời điểm này không được áp dụng ưu đãi."
+    semantics: [date, session_time, end]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái chiến dịch"
+    description: "Trạng thái hoạt động của chiến dịch (ACTIVE/INACTIVE)."
+    semantics: [status, campaign]
+
+  mode:
+    data_type: varchar
+    business_name: "Chế độ chiến dịch"
+    description: "Loại/Chế độ ứng xử chiến dịch (tùy nội dung hệ thống)."
+    semantics: [category, campaign, mode]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo"
+    description: "Thời điểm chiến dịch được tạo."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo chiến dịch."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm cập nhật"
+    description: "Thời điểm chiến dịch được chỉnh sửa."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/service cập nhật chiến dịch."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  booking_exclude_date:
+    data_type: varchar
+    business_name: "Ngày đặt vé bị loại trừ"
+    description: "Danh sách ngày đặt vé không được áp dụng chiến dịch."
+    semantics: [date, booking_time, exclude]
+
+  session_exclude_date:
+    data_type: varchar
+    business_name: "Ngày suất chiếu bị loại trừ"
+    description: "Danh sách ngày suất chiếu bị loại trừ."
+    semantics: [date, session_time, exclude]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "booking_date_from"
+    allowed_time_columns:
+      - booking_date_from
+      - booking_date_to
+      - session_date_from
+      - session_date_to
+      - created_date
+    forbidden_columns:
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Các campaign nào đang ACTIVE trong tháng này?"
+  - "Chiến dịch của vendor X áp dụng từ ngày nào đến ngày nào?"
+  - "Campaign nào còn hiệu lực cho suất chiếu vào hôm nay?"
+  - "Số lượng ghế được áp dụng tối đa trong từng campaign?"
+
+sample_queries:
+  - description: "Danh sách campaign ACTIVE và thời gian hiệu lực"
+    sql: |
+      SELECT
+        id,
+        name,
+        booking_date_from,
+        booking_date_to,
+        session_date_from,
+        session_date_to
+      FROM lakehouse.lh_vnfilm_v2.campaign
+      WHERE status = 'ACTIVE'
+      ORDER BY booking_date_from
+      LIMIT 200;
+
+  - description: "Các campaign của vendor cụ thể"
+    sql: |
+      SELECT
+        id,
+        name,
+        vendor_id,
+        booking_date_from,
+        booking_date_to
+      FROM lakehouse.lh_vnfilm_v2.campaign
+      WHERE vendor_id = 123
+      ORDER BY booking_date_from DESC
+      LIMIT 200;
