@@ -169,6 +169,11 @@ class SubGraph:
     Sub-graph extracted from Neo4j.
     
     Contains all relevant schema information for the query.
+    
+    Features:
+    - Pre-computed indexes for O(1) lookups
+    - Bidirectional join traversal
+    - Compact prompt generation for LLM
     """
     
     tables: list[TableNode] = field(default_factory=list)
@@ -176,6 +181,90 @@ class SubGraph:
     joins: list[JoinEdge] = field(default_factory=list)
     metrics: list[MetricNode] = field(default_factory=list)
     concepts: list[ConceptNode] = field(default_factory=list)
+    
+    # Pre-computed indexes (built on first access)
+    _table_index: dict[str, TableNode] = field(default_factory=dict, repr=False)
+    _columns_by_table: dict[str, list[ColumnNode]] = field(default_factory=dict, repr=False)
+    _joins_by_table: dict[str, list[JoinEdge]] = field(default_factory=dict, repr=False)
+    _indexed: bool = field(default=False, repr=False)
+    
+    def _build_indexes(self) -> None:
+        """Build lookup indexes for fast access."""
+        if self._indexed:
+            return
+        
+        # Table index: name -> TableNode
+        self._table_index = {t.table_name: t for t in self.tables}
+        
+        # Columns grouped by table
+        self._columns_by_table = {}
+        for c in self.columns:
+            if c.table_name not in self._columns_by_table:
+                self._columns_by_table[c.table_name] = []
+            self._columns_by_table[c.table_name].append(c)
+        
+        # Joins by table (bidirectional)
+        self._joins_by_table = {}
+        for j in self.joins:
+            # Forward
+            if j.from_table not in self._joins_by_table:
+                self._joins_by_table[j.from_table] = []
+            self._joins_by_table[j.from_table].append(j)
+            # Reverse
+            if j.to_table not in self._joins_by_table:
+                self._joins_by_table[j.to_table] = []
+            if j not in self._joins_by_table[j.to_table]:
+                self._joins_by_table[j.to_table].append(j)
+        
+        self._indexed = True
+    
+    # =========================================================================
+    # Fast Lookups (O(1) with indexes)
+    # =========================================================================
+    
+    def get_table(self, name: str) -> TableNode | None:
+        """Get table by name (O(1))."""
+        self._build_indexes()
+        return self._table_index.get(name)
+    
+    def get_columns_for_table(self, table_name: str) -> list[ColumnNode]:
+        """Get all columns for a table (O(1))."""
+        self._build_indexes()
+        return self._columns_by_table.get(table_name, [])
+    
+    def get_joins_for_table(self, table_name: str) -> list[JoinEdge]:
+        """Get all joins involving a table (O(1))."""
+        self._build_indexes()
+        return self._joins_by_table.get(table_name, [])
+    
+    def get_related_tables(self, table_name: str) -> list[str]:
+        """Get tables that can be joined with given table."""
+        joins = self.get_joins_for_table(table_name)
+        related = set()
+        for j in joins:
+            if j.from_table == table_name:
+                related.add(j.to_table)
+            else:
+                related.add(j.from_table)
+        return list(related)
+    
+    def get_primary_keys(self, table_name: str | None = None) -> list[ColumnNode]:
+        """Get primary key columns."""
+        self._build_indexes()
+        if table_name:
+            return [c for c in self._columns_by_table.get(table_name, []) if c.is_primary_key]
+        return [c for c in self.columns if c.is_primary_key]
+    
+    def get_time_columns(self, table_name: str | None = None) -> list[ColumnNode]:
+        """Get time columns."""
+        self._build_indexes()
+        if table_name:
+            return [c for c in self._columns_by_table.get(table_name, []) if c.is_time_column]
+        return [c for c in self.columns if c.is_time_column]
+    
+    # =========================================================================
+    # Serialization
+    # =========================================================================
     
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,8 +275,23 @@ class SubGraph:
             "concepts": [c.to_dict() for c in self.concepts],
         }
     
-    def to_prompt_context(self) -> str:
-        """Convert sub-graph to text for LLM prompt."""
+    # =========================================================================
+    # Prompt Generation (Compact format to save tokens)
+    # =========================================================================
+    
+    def to_prompt_context(self, compact: bool = False) -> str:
+        """
+        Convert sub-graph to text for LLM prompt.
+        
+        Args:
+            compact: If True, use shorter format to save tokens
+        """
+        if compact:
+            return self._to_compact_prompt()
+        return self._to_detailed_prompt()
+    
+    def _to_detailed_prompt(self) -> str:
+        """Detailed format with full descriptions."""
         lines = []
         
         # Tables
@@ -203,13 +307,8 @@ class SubGraph:
         # Columns (grouped by table)
         if self.columns:
             lines.append("\n## Columns")
-            table_cols: dict[str, list[ColumnNode]] = {}
-            for c in self.columns:
-                if c.table_name not in table_cols:
-                    table_cols[c.table_name] = []
-                table_cols[c.table_name].append(c)
-            
-            for table_name, cols in table_cols.items():
+            self._build_indexes()
+            for table_name, cols in self._columns_by_table.items():
                 lines.append(f"\n### {table_name}")
                 for c in cols:
                     pk = " [PK]" if c.is_primary_key else ""
@@ -235,6 +334,44 @@ class SubGraph:
         
         return "\n".join(lines)
     
+    def _to_compact_prompt(self) -> str:
+        """Compact format to minimize tokens."""
+        lines = []
+        
+        # Tables (one line each)
+        if self.tables:
+            lines.append("## Tables")
+            for t in self.tables:
+                lines.append(f"- {t.table_name}: {t.business_name}")
+        
+        # Key columns only (PK + TIME)
+        key_cols = [c for c in self.columns if c.is_primary_key or c.is_time_column]
+        if key_cols:
+            lines.append("\n## Key Columns")
+            self._build_indexes()
+            for table_name in self._columns_by_table:
+                table_keys = [c for c in self._columns_by_table[table_name] 
+                              if c.is_primary_key or c.is_time_column]
+                if table_keys:
+                    cols_str = ", ".join([
+                        f"{c.column_name}{'[PK]' if c.is_primary_key else '[T]'}" 
+                        for c in table_keys
+                    ])
+                    lines.append(f"- {table_name}: {cols_str}")
+        
+        # Joins (compact format)
+        if self.joins:
+            lines.append("\n## Joins")
+            for j in self.joins:
+                on = j.on_clause[0] if j.on_clause else ""
+                lines.append(f"- {j.from_table}→{j.to_table}: {on}")
+        
+        return "\n".join(lines)
+    
+    # =========================================================================
+    # Backward Compatible Methods
+    # =========================================================================
+    
     def get_table_names(self) -> list[str]:
         """Get list of table names."""
         return [t.table_name for t in self.tables]
@@ -244,3 +381,4 @@ class SubGraph:
         if table_name:
             return [c.column_name for c in self.columns if c.table_name == table_name]
         return [f"{c.table_name}.{c.column_name}" for c in self.columns]
+

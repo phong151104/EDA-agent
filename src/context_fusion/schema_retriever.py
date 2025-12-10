@@ -337,18 +337,24 @@ class SchemaRetriever:
         MATCH (t:Table {domain: $domain})
         OPTIONAL MATCH (t)-[:HAS_COLUMN]->(c:Column)
         OPTIONAL MATCH (t)-[:HAS_CONCEPT]->(con:Concept)
-        WITH t, c, con, $keywords AS keywords
-        WHERE any(kw IN keywords WHERE 
-            toLower(t.table_name) CONTAINS toLower(kw) OR
-            toLower(t.business_name) CONTAINS toLower(kw) OR
-            toLower(t.description) CONTAINS toLower(kw) OR
-            toLower(c.column_name) CONTAINS toLower(kw) OR
-            toLower(c.business_name) CONTAINS toLower(kw) OR
-            any(sem IN c.semantics WHERE toLower(sem) CONTAINS toLower(kw)) OR
-            toLower(con.name) CONTAINS toLower(kw) OR
-            any(syn IN con.synonyms WHERE toLower(syn) CONTAINS toLower(kw))
-        )
-        RETURN t.table_name AS table_name, count(DISTINCT kw) AS match_count
+        WITH t, collect(DISTINCT c) AS cols, collect(DISTINCT con) AS cons, $keywords AS keywords
+        WITH t, cols, cons, keywords,
+             size([kw IN keywords WHERE 
+                toLower(t.table_name) CONTAINS toLower(kw) OR
+                toLower(t.business_name) CONTAINS toLower(kw) OR
+                toLower(t.description) CONTAINS toLower(kw) OR
+                any(col IN cols WHERE 
+                    toLower(col.column_name) CONTAINS toLower(kw) OR
+                    toLower(col.business_name) CONTAINS toLower(kw) OR
+                    any(sem IN col.semantics WHERE toLower(sem) CONTAINS toLower(kw))
+                ) OR
+                any(concept IN cons WHERE 
+                    toLower(concept.name) CONTAINS toLower(kw) OR
+                    any(syn IN concept.synonyms WHERE toLower(syn) CONTAINS toLower(kw))
+                )
+             ]) AS match_count
+        WHERE match_count > 0
+        RETURN t.table_name AS table_name, match_count
         ORDER BY match_count DESC
         LIMIT 20
         """

@@ -1,6 +1,6 @@
 """Context Fusion Layer module."""
 
-from .context_builder import ContextBuilder, EnrichedContext, build_context
+from .context_builder import ContextBuilder, EnrichedContext, build_context, build_session
 from .models import (
     AnalyzedQuery,
     ColumnNode,
@@ -14,6 +14,7 @@ from .models import (
 )
 from .query_rewriter import QueryRewriter, quick_analyze
 from .schema_retriever import SchemaRetriever
+from .session_context import EDASession, cache_session, get_cached_session
 from .vector_index import Neo4jVectorIndex
 
 __all__ = [
@@ -38,4 +39,10 @@ __all__ = [
     "ContextBuilder",
     "EnrichedContext",
     "build_context",
+    "build_session",
+    # Session
+    "EDASession",
+    "cache_session",
+    "get_cached_session",
 ]
+
