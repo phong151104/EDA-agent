@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from .models import AnalyzedQuery, SubGraph
 from .query_rewriter import QueryRewriter, quick_analyze
 from .schema_retriever import SchemaRetriever
+from .session_context import EDASession, cache_session
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,16 @@ class EnrichedContext:
             },
             "sub_graph": self.sub_graph.to_dict(),
         }
+    
+    def to_session(self, domain: str = "vnfilm_ticketing") -> EDASession:
+        """Convert to EDASession for pipeline usage."""
+        return EDASession.create(
+            query=self.original_query,
+            analyzed_query=self.analyzed_query,
+            sub_graph=self.sub_graph,
+            prompt_context=self.prompt_context,
+            domain=domain,
+        )
 
 
 class ContextBuilder:
@@ -114,6 +125,43 @@ class ContextBuilder:
             prompt_context=prompt_context,
         )
     
+    async def build_session(
+        self,
+        query: str,
+        domain: str | None = None,
+        top_k: int = 10,
+        cache: bool = True,
+    ) -> EDASession:
+        """
+        Build EDASession from user query.
+        
+        This is the recommended method for pipeline usage.
+        Returns an EDASession that can be passed to all downstream agents.
+        
+        Args:
+            query: Raw user query
+            domain: Optional domain override
+            top_k: Number of vector search results
+            cache: Whether to cache the session
+            
+        Returns:
+            EDASession with SubGraph and metadata
+        """
+        domain = domain or self.domain
+        
+        # Build context
+        context = await self.build(query, domain, top_k)
+        
+        # Convert to session
+        session = context.to_session(domain=domain)
+        
+        # Cache if requested
+        if cache:
+            cache_session(session)
+        
+        logger.info(f"Session created: {session.summary()}")
+        return session
+    
     def _generate_prompt_context(
         self,
         analyzed_query: AnalyzedQuery,
@@ -148,8 +196,34 @@ class ContextBuilder:
         self.close()
 
 
-# Convenience function for quick context building
+# Convenience functions
 async def build_context(query: str, domain: str = "vnfilm_ticketing") -> EnrichedContext:
     """Quick function to build context from a query."""
-    async with ContextBuilder(domain=domain) as builder:
+    builder = ContextBuilder(domain=domain)
+    try:
         return await builder.build(query)
+    finally:
+        builder.close()
+
+
+async def build_session(query: str, domain: str = "vnfilm_ticketing") -> EDASession:
+    """
+    Quick function to build session from a query.
+    
+    This is the recommended entry point for the EDA pipeline.
+    
+    Example:
+        session = await build_session("Doanh thu theo vendor tháng này")
+        
+        # SubGraph is stored in session, pass to agents:
+        planner.process(session.sub_graph)
+        sql_gen.process(session.sub_graph)
+        
+        # Track state across agents:
+        session.set_state("plan", planner_result)
+    """
+    builder = ContextBuilder(domain=domain)
+    try:
+        return await builder.build_session(query)
+    finally:
+        builder.close()
