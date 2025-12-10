@@ -36,10 +36,10 @@ foreign_keys:
     description: "Join sang bảng film."
 
   - column: location_id
-    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_table: "lakehouse.lh_vnfilm_v2.locations"
     references_column: "id"
     relation: "many_to_one"
-    description: "Join sang bảng location."
+    description: "Join sang bảng locations."
 
   - column: vendor_id
     references_table: "lakehouse.lh_vnfilm_v2.vendor"

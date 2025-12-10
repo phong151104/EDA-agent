@@ -30,17 +30,6 @@ foreign_keys:
     relation: "many_to_one"
     description: "Join sang bảng bank để lấy thông tin ngân hàng thanh toán."
 
-  - column: campaign_id
-    references_table: "lakehouse.lh_vnfilm_v2.campaign"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Join sang bảng campaign (nếu đơn hàng thuộc chiến dịch)."
-
-  - column: sub_campaign_id
-    references_table: "lakehouse.lh_vnfilm_v2.sub_campaign"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Join sang bảng sub_campaign (nếu có)."
 
 time_columns:
   - created_date
