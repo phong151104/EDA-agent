@@ -1,0 +1,376 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: order_film
+domain: vnfilm_ticketing
+
+table_type: dim_extension
+business_name: "Bảng mở rộng đơn hàng theo phim/rạp/suất chiếu (order_film)"
+grain: "1 dòng = 1 đơn hàng (khóa id trùng với orders.id), snapshot thông tin phim, rạp, suất chiếu, vendor"
+
+description: >
+  Bảng order_film là bảng mở rộng cho orders, phục vụ phân tích theo phim, rạp, địa điểm, suất chiếu và vendor.
+  Chứa các thuộc tính phim (tên, thể loại, quốc gia, đạo diễn/diễn viên, thời lượng, ngôn ngữ, PG rating, độ tuổi),
+  thông tin rạp (tên/địa chỉ), thông tin suất chiếu (thời gian/loại/phiên bản) và các mã định danh phía vendor.
+
+tags:
+  - dim_extension
+  - order_enrichment
+  - film
+  - cinema
+  - session
+  - vendor
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys:
+  - column: id
+    references_table: "lakehouse.lh_vnfilm_v2.orders"
+    references_column: "id"
+    relation: "one_to_one"
+    description: "Join 1-1 sang bảng orders (order_film.id = orders.id)."
+
+  - column: vendor_id
+    references_table: "lakehouse.lh_vnfilm_v2.vendor"
+    references_column: "id"
+    relation: "many_to_one"
+    description: "Join sang bảng vendor để lấy thông tin vendor chuẩn (order_film.vendor_id = vendor.id)."
+
+time_columns:
+  - film_publish_date
+  - session_time
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "session_time cho lọc theo thời gian suất chiếu"
+  - "film_category, film_country, film_language, film_pg_rating cho phân tích theo thuộc tính phim"
+  - "cinema_id hoặc cinema_name_vi cho phân tích theo rạp"
+  - "vendor_id cho phân tích theo vendor"
+  - "created_by_hash cho lọc theo người dùng (áp RLS nếu cần)"
+
+concepts:
+  - name: order
+    synonyms: ["đơn", "đơn hàng", "order", "giao dịch"]
+
+  - name: film
+    synonyms: ["phim", "movie", "film"]
+
+  - name: cinema
+    synonyms: ["rạp", "cinema", "theater", "cụm rạp"]
+
+  - name: session
+    synonyms: ["suất chiếu", "showtime", "session"]
+
+  - name: vendor
+    synonyms: ["đối tác", "nhà cung cấp", "merchant", "vendor"]
+
+  - name: content_assets
+    synonyms: ["poster", "banner", "trailer", "ảnh phim", "video trailer"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID đơn hàng"
+    description: "Khóa liên kết 1-1 sang orders.id."
+    semantics: [id, primary, order, join_key]
+    pii: false
+
+  cinema_id:
+    data_type: bigint
+    description: "ID rạp."
+    semantics: [id, cinema]
+    pii: false
+
+  cinema_name_vi:
+    data_type: varchar
+    description: "Tên rạp (tiếng Việt)."
+    semantics: [name, cinema, vi]
+
+  cinema_name_en:
+    data_type: varchar
+    description: "Tên rạp (tiếng Anh)."
+    semantics: [name, cinema, en]
+
+  cinema_address:
+    data_type: varchar
+    description: "Địa chỉ rạp."
+    semantics: [address, cinema]
+
+  film_id:
+    data_type: bigint
+    description: "ID phim."
+    semantics: [id, film]
+    pii: false
+
+  film_name_vi:
+    data_type: varchar
+    description: "Tên phim (tiếng Việt)."
+    semantics: [name, film, vi]
+
+  film_name_en:
+    data_type: varchar
+    description: "Tên phim (tiếng Anh)."
+    semantics: [name, film, en]
+
+  film_trailer_url:
+    data_type: varchar
+    description: "URL trailer phim."
+    semantics: [url, film, trailer]
+
+  film_poster_url:
+    data_type: varchar
+    description: "URL poster phim."
+    semantics: [url, film, poster]
+
+  film_banner_url:
+    data_type: varchar
+    description: "URL banner phim."
+    semantics: [url, film, banner]
+
+  film_country:
+    data_type: varchar
+    description: "Quốc gia phim."
+    semantics: [category, film, country]
+
+  film_category:
+    data_type: varchar
+    description: "Thể loại phim."
+    semantics: [category, film, genre]
+
+  director:
+    data_type: varchar
+    description: "Đạo diễn."
+    semantics: [person, film, director]
+
+  actors:
+    data_type: varchar
+    description: "Danh sách diễn viên (raw/text)."
+    semantics: [person, film, actors]
+
+  film_duration:
+    data_type: integer
+    description: "Thời lượng phim (phút)."
+    semantics: [duration, film]
+    unit: minute
+
+  film_language:
+    data_type: varchar
+    description: "Ngôn ngữ phim."
+    semantics: [category, film, language]
+
+  film_description_vi:
+    data_type: varchar
+    description: "Mô tả phim (VI)."
+    semantics: [text, film, description, vi]
+
+  film_description_en:
+    data_type: varchar
+    description: "Mô tả phim (EN)."
+    semantics: [text, film, description, en]
+
+  film_publish_date:
+    data_type: timestamp(6)
+    description: "Ngày phát hành phim."
+    semantics: [date, film, publish_time]
+
+  film_pg_rating:
+    data_type: varchar
+    description: "Phân loại độ tuổi/PG rating."
+    semantics: [category, film, rating]
+
+  film_age:
+    data_type: decimal(38,18)
+    description: "Độ tuổi yêu cầu/khuyến nghị theo dữ liệu nguồn."
+    semantics: [age, film, rating]
+
+  location_id:
+    data_type: bigint
+    description: "ID địa điểm/khu vực (nếu có mapping)."
+    semantics: [id, location]
+    pii: false
+
+  session_id:
+    data_type: bigint
+    description: "ID suất chiếu."
+    semantics: [id, session]
+    pii: false
+
+  session_type:
+    data_type: varchar
+    description: "Loại suất chiếu (2D/3D/IMAX... nếu có)."
+    semantics: [category, session, type]
+
+  session_dimension:
+    data_type: varchar
+    description: "Thuộc tính/định dạng suất chiếu (dimension)."
+    semantics: [category, session, dimension]
+
+  session_time:
+    data_type: timestamp(6)
+    description: "Thời điểm chiếu."
+    semantics: [date, session, show_time]
+
+  session_version:
+    data_type: varchar
+    description: "Phiên bản suất chiếu (raw)."
+    semantics: [version, session]
+
+  session_version_type:
+    data_type: varchar
+    description: "Loại phiên bản suất chiếu."
+    semantics: [category, session, version_type]
+
+  vendor_id:
+    data_type: bigint
+    description: "ID vendor, join sang vendor.id."
+    semantics: [id, vendor, join_key]
+    pii: false
+
+  vendor_name:
+    data_type: varchar
+    description: "Tên vendor (VI)."
+    semantics: [name, vendor, vi]
+
+  vendor_name_en:
+    data_type: varchar
+    description: "Tên vendor (EN)."
+    semantics: [name, vendor, en]
+
+  vendor_cinema_id:
+    data_type: varchar
+    description: "Mã rạp phía vendor."
+    semantics: [id, vendor, cinema, external_id]
+
+  vendor_film_id:
+    data_type: varchar
+    description: "Mã phim phía vendor."
+    semantics: [id, vendor, film, external_id]
+
+  vendor_film_name_vi:
+    data_type: varchar
+    description: "Tên phim phía vendor (VI)."
+    semantics: [name, vendor, film, vi]
+
+  vendor_film_name_en:
+    data_type: varchar
+    description: "Tên phim phía vendor (EN)."
+    semantics: [name, vendor, film, en]
+
+  vendor_session_id:
+    data_type: varchar
+    description: "Mã suất chiếu phía vendor."
+    semantics: [id, vendor, session, external_id]
+
+  vendor_room_id:
+    data_type: varchar
+    description: "Mã phòng chiếu phía vendor."
+    semantics: [id, vendor, room, external_id]
+
+  vendor_room_name_vi:
+    data_type: varchar
+    description: "Tên phòng chiếu phía vendor (VI)."
+    semantics: [name, vendor, room, vi]
+
+  vendor_room_name_en:
+    data_type: varchar
+    description: "Tên phòng chiếu phía vendor (EN)."
+    semantics: [name, vendor, room, en]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo bản ghi."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm cập nhật bản ghi."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "User/service cập nhật."
+
+  language:
+    data_type: varchar
+    description: "Ngôn ngữ bản ghi (nếu có)."
+    semantics: [language]
+
+  created_by:
+    data_type: varchar
+    description: "Người tạo (raw)."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    description: "Người tạo (hash) - dùng RLS nếu cần."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "session_time"
+    allowed_time_columns:
+      - session_time
+      - created_date
+      - film_publish_date
+    forbidden_columns:
+      - created_by
+
+sample_questions:
+  - "Doanh thu theo phim trong 30 ngày gần nhất?"
+  - "Top 10 rạp có số vé bán cao nhất theo tuần?"
+  - "Số đơn theo thể loại phim và khung giờ chiếu (session_time) trong tháng này?"
+  - "Tỷ trọng đơn theo ngôn ngữ phim (film_language) theo vendor?"
+  - "Top phim theo số suất chiếu và số đơn trong quý gần nhất?"
+
+sample_queries:
+  - description: "Top phim theo số đơn và doanh thu (join orders + order_film)"
+    sql: |
+      SELECT
+        f.film_name_vi,
+        COUNT(*) AS total_orders,
+        SUM(o.vnpay_final_amount) AS total_revenue
+      FROM lakehouse.lh_vnfilm_v2.orders o
+      JOIN lakehouse.lh_vnfilm_v2.order_film f
+        ON f.id = o.id
+      WHERE o.created_date >= date_trunc('day', current_date) - interval '29' day
+      GROUP BY 1
+      ORDER BY total_revenue DESC
+      LIMIT 10;
+
+  - description: "Số vé bán theo rạp theo tuần (join orders + order_film)"
+    sql: |
+      SELECT
+        date_trunc('week', o.created_date) AS week,
+        f.cinema_name_vi,
+        SUM(o.number_of_seats) AS total_seats
+      FROM lakehouse.lh_vnfilm_v2.orders o
+      JOIN lakehouse.lh_vnfilm_v2.order_film f
+        ON f.id = o.id
+      WHERE o.created_date >= date_trunc('week', current_date) - interval '8' week
+      GROUP BY 1, 2
+      ORDER BY week DESC, total_seats DESC
+      LIMIT 200;
+
+  - description: "Phân bố đơn theo thể loại phim và khung giờ chiếu trong 30 ngày"
+    sql: |
+      SELECT
+        f.film_category,
+        date_trunc('hour', f.session_time) AS hour_bucket,
+        COUNT(*) AS total_orders
+      FROM lakehouse.lh_vnfilm_v2.order_film f
+      JOIN lakehouse.lh_vnfilm_v2.orders o
+        ON f.id = o.id
+      WHERE f.session_time >= date_trunc('day', current_date) - interval '29' day
+      GROUP BY 1, 2
+      ORDER BY total_orders DESC
+      LIMIT 200;

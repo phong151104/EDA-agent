@@ -1,0 +1,53 @@
+# metadata/domains/vnfilm_ticketing/metrics.yaml
+metrics:
+  - name: total_vnpay_revenue
+    business_name: "Tổng doanh thu VNPAY"
+    description: "Tổng vnpay_total_amount trong khoảng thời gian chỉ định."
+    expression: "SUM(orders.vnpay_total_amount)"
+    base_table: orders
+    grain: aggregated
+    unit: VND
+    tags: [revenue, vnpay]
+
+  - name: total_seats
+    business_name: "Tổng số ghế/vé bán ra"
+    description: "Tổng number_of_seats trong khoảng thời gian chỉ định."
+    expression: "SUM(orders.number_of_seats)"
+    base_table: orders
+    grain: aggregated
+    tags: [volume, seat]
+
+  - name: order_count
+    business_name: "Số lượng đơn hàng"
+    description: "Số dòng (orders) trong khoảng thời gian chỉ định."
+    expression: "COUNT(*)"
+    base_table: orders
+    grain: aggregated
+    tags: [volume, order]
+
+  - name: avg_order_value
+    business_name: "Giá trị đơn hàng trung bình"
+    description: "Trung bình vnpay_total_amount cho mỗi đơn hàng."
+    expression: "AVG(orders.vnpay_total_amount)"
+    base_table: orders
+    grain: aggregated
+    unit: VND
+    tags: [revenue, vnpay, average]
+
+  - name: total_promotion_amount
+    business_name: "Tổng tiền khuyến mại"
+    description: "Tổng promotion_amount được áp dụng."
+    expression: "SUM(orders.promotion_amount)"
+    base_table: orders
+    grain: aggregated
+    unit: VND
+    tags: [promotion, discount]
+
+  - name: vnpay_seat_profit_total
+    business_name: "Tổng lợi nhuận VNPAY (ghế)"
+    description: "Tổng vnpay_seat_profit trong khoảng thời gian chỉ định."
+    expression: "SUM(orders.vnpay_seat_profit)"
+    base_table: orders
+    grain: aggregated
+    unit: VND
+    tags: [profit, vnpay, seat]

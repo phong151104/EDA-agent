@@ -1,0 +1,311 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: vendor
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Bảng thông tin vendor / rạp chiếu"
+grain: "1 dòng = 1 vendor/đối tác (rạp, cinema, merchant)"
+
+description: >
+  Bảng dimension lưu thông tin vendor/rạp chiếu: tên hiển thị, domain nội bộ,
+  cấu hình giảm giá ghế/concession, cấu hình job/interval xử lý, và mô tả đa ngôn ngữ.
+  Thường được join với các bảng fact giao dịch/đơn hàng để phân tích theo vendor/rạp.
+
+tags:
+  - dimension_table
+  - vendor
+  - cinema
+  - merchant
+  - config
+
+primary_key:
+  - id
+
+foreign_keys: []
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "status, job_status để lọc vendor đang active"
+  - "local_domain, project_domain để phân tích theo domain"
+  - "created_date, modified_date cho phân tích theo thời gian cấu hình"
+
+concepts:
+  - name: vendor
+    synonyms: ["nhà cung cấp", "đối tác", "rạp", "cinema", "merchant", "vendor"]
+
+  - name: seat_discount
+    synonyms: ["giảm giá ghế", "discount vé", "discount seat"]
+
+  - name: concession_discount
+    synonyms: ["giảm giá bắp nước", "discount concession", "combo giảm giá"]
+
+  - name: job_schedule
+    synonyms: ["lịch job", "interval job", "chu kỳ chạy job"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID vendor"
+    description: "Định danh duy nhất của vendor/đối tác."
+    semantics: [id, primary, vendor]
+    pii: false
+
+  name_vi:
+    data_type: varchar
+    business_name: "Tên vendor (Tiếng Việt)"
+    description: "Tên hiển thị của vendor/rạp bằng tiếng Việt."
+    semantics: [name, vendor, vi]
+    pii: false
+
+  name_en:
+    data_type: varchar
+    business_name: "Tên vendor (Tiếng Anh)"
+    description: "Tên hiển thị của vendor/rạp bằng tiếng Anh."
+    semantics: [name, vendor, en]
+    pii: false
+
+  local_domain:
+    data_type: varchar
+    description: "Domain nội bộ hoặc group logic của vendor (ví dụ: cinema chain, khu vực)."
+    semantics: [domain, grouping]
+
+  logo:
+    data_type: varchar
+    description: "Đường dẫn/logo vendor (URL hoặc path)."
+    semantics: [logo, media]
+
+  secret:
+    data_type: varchar
+    description: "Secret/cấu hình bảo mật liên quan vendor (không dùng trong phân tích)."
+    semantics: [secret, config]
+    pii: true
+    sensitive: true
+
+  max_seat:
+    data_type: integer
+    description: "Số ghế tối đa hoặc giới hạn cấu hình cho vendor."
+    semantics: [limit, seat, capacity]
+
+  multiple_seat_support:
+    data_type: varchar
+    description: "Cờ/cấu hình cho biết có hỗ trợ mua nhiều ghế hay không."
+    semantics: [flag, seat, multiple]
+
+  seat_discount_percent:
+    data_type: decimal(38,18)
+    description: "Phần trăm giảm giá cho ghế/vé."
+    semantics: [discount, percent, seat]
+
+  seat_discount_tax:
+    data_type: decimal(38,18)
+    description: "Thuế hoặc phần giảm thuế áp dụng cho ghế/vé."
+    semantics: [tax, discount, seat]
+
+  max_concession:
+    data_type: integer
+    description: "Giới hạn concession tối đa (ví dụ số combo bắp nước)."
+    semantics: [limit, concession]
+
+  concession_discount_percent:
+    data_type: decimal(38,18)
+    description: "Phần trăm giảm giá cho concession (bắp nước, combo)."
+    semantics: [discount, percent, concession]
+
+  concession_discount_tax:
+    data_type: decimal(38,18)
+    description: "Thuế/giảm thuế áp dụng cho concession."
+    semantics: [tax, discount, concession]
+
+  concession_support:
+    data_type: varchar
+    description: "Cờ/cấu hình cho biết vendor có hỗ trợ concession hay không."
+    semantics: [flag, concession]
+
+  display_order:
+    data_type: integer
+    description: "Thứ tự hiển thị vendor trong UI/danh sách."
+    semantics: [order, ui]
+
+  status:
+    data_type: varchar
+    description: "Trạng thái hoạt động chung của vendor."
+    semantics: [status, vendor_status]
+
+  job_status:
+    data_type: varchar
+    description: "Trạng thái job liên quan vendor (job xử lý, sync, v.v.)."
+    semantics: [status, job]
+
+  job_delay_first_time:
+    data_type: integer
+    description: "Độ trễ (giây/phút) lần chạy job đầu tiên cho vendor."
+    semantics: [interval, job, delay]
+
+  job_interval_cinema:
+    data_type: integer
+    description: "Chu kỳ chạy job (interval) liên quan cinema cho vendor."
+    semantics: [interval, job, cinema]
+
+  job_interval_film:
+    data_type: integer
+    description: "Chu kỳ chạy job liên quan film cho vendor."
+    semantics: [interval, job, film]
+
+  job_interval_session:
+    data_type: integer
+    description: "Chu kỳ chạy job liên quan session (suất chiếu)."
+    semantics: [interval, job, session]
+
+  job_interval_concession:
+    data_type: integer
+    description: "Chu kỳ chạy job liên quan concession."
+    semantics: [interval, job, concession]
+
+  created_date:
+    data_type: timestamp(6)
+    description: "Thời điểm tạo bản ghi vendor."
+    semantics: [date, created_time]
+
+  modified_date:
+    data_type: timestamp(6)
+    description: "Thời điểm cập nhật bản ghi vendor gần nhất."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    description: "User/service cập nhật bản ghi vendor."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  sub_fee_ignored_film:
+    data_type: varchar
+    description: "Cấu hình bỏ qua một số sub fee liên quan film."
+    semantics: [config, fee, film]
+
+  sub_fee_ignored_cinema:
+    data_type: varchar
+    description: "Cấu hình bỏ qua một số sub fee liên quan cinema."
+    semantics: [config, fee, cinema]
+
+  project_domain:
+    data_type: varchar
+    description: "Domain/dự án mà vendor thuộc về (nếu tách theo project)."
+    semantics: [domain, project]
+
+  sub_fee_ignored_session:
+    data_type: varchar
+    description: "Cấu hình bỏ qua sub fee liên quan session."
+    semantics: [config, fee, session]
+
+  sub_fee_ignored_vendor_seat_type:
+    data_type: varchar
+    description: "Cấu hình bỏ qua sub fee theo loại ghế của vendor."
+    semantics: [config, fee, seat, vendor]
+
+  sub_fee_ignored_room_id:
+    data_type: varchar
+    description: "Cấu hình bỏ qua sub fee theo room_id/phòng chiếu."
+    semantics: [config, fee, room]
+
+  image:
+    data_type: varchar
+    description: "Đường dẫn hình ảnh/vendor image (khác logo nếu có)."
+    semantics: [image, media]
+
+  description_vi:
+    data_type: varchar
+    description: "Mô tả vendor bằng tiếng Việt."
+    semantics: [description, vi]
+
+  description_en:
+    data_type: varchar
+    description: "Mô tả vendor bằng tiếng Anh."
+    semantics: [description, en]
+
+  description:
+    data_type: varchar
+    description: "Mô tả chung/ghi chú khác về vendor (ngôn ngữ tự do)."
+    semantics: [description]
+
+  created_by:
+    data_type: varchar
+    description: "User/service tạo bản ghi vendor."
+    semantics: [user_identity, creator, raw]
+    pii: true
+    sensitive: true
+
+  created_by_hash:
+    data_type: varchar
+    description: "Hash của user/service tạo bản ghi (dùng cho join/RLS nếu cần)."
+    semantics: [user_identity, creator, hash]
+    pii: false
+    sensitive: true
+
+  payment_order_lead_second:
+    data_type: integer
+    description: "Khoảng lead time (giây) giữa thời điểm đặt và thanh toán order theo cấu hình vendor."
+    semantics: [lead_time, payment, order]
+
+  create_order_lead_second:
+    data_type: integer
+    description: "Khoảng lead time (giây) giữa các step trong process tạo order theo cấu hình vendor."
+    semantics: [lead_time, order]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - secret
+      - modified_by
+      - created_by
+
+sample_questions:
+  - "Danh sách các vendor/rạp đang active hiện tại là gì?"
+  - "Những vendor nào có cấu hình giảm giá ghế (seat_discount_percent) lớn hơn 10%?"
+  - "Tần suất chạy job session/concession cho từng vendor như thế nào?"
+  - "Có bao nhiêu vendor thuộc mỗi local_domain/project_domain?"
+  - "Những vendor nào đang hỗ trợ concession và còn hoạt động?"
+
+sample_queries:
+  - description: "Danh sách vendor đang active"
+    sql: |
+      SELECT
+        id,
+        name_vi,
+        name_en,
+        status,
+        local_domain
+      FROM lakehouse.lh_vnfilm_v2.vendor
+      WHERE status = 'ACTIVE'
+      ORDER BY name_vi;
+
+  - description: "Vendor có giảm giá ghế lớn hơn 10%"
+    sql: |
+      SELECT
+        id,
+        name_vi,
+        seat_discount_percent
+      FROM lakehouse.lh_vnfilm_v2.vendor
+      WHERE seat_discount_percent > 0.10
+      ORDER BY seat_discount_percent DESC;
+
+  - description: "Số lượng vendor theo local_domain"
+    sql: |
+      SELECT
+        local_domain,
+        COUNT(*) AS vendor_count
+      FROM lakehouse.lh_vnfilm_v2.vendor
+      GROUP BY local_domain
+      ORDER BY vendor_count DESC;

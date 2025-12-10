@@ -1,0 +1,26 @@
+# metadata/domains/vnfilm_ticketing/joins.yaml
+joins:
+  - from: orders
+    to: bank
+    type: left
+    on:
+      - "orders.bank_id = bank.id"
+    description: "Join đơn hàng với thông tin ngân hàng."
+
+  - from: orders
+    to: order_film
+    type: left
+    on:
+      - "orders.id = order_film.id"
+    description: "Join đơn hàng với thông tin đơn hàng chi tiết film."
+
+  - from: order_film
+    to: vendor
+    type: left
+    on:
+      - "order_film.vendor_id = vendor.id"
+    description: "Join đơn hàng với thông tin vendor."
+    
+  # sau này thêm:
+  # - orders.campaign_id -> campaign.id
+  # - orders.sub_campaign_id -> sub_campaign.id

@@ -1,0 +1,208 @@
+catalog: lakehouse
+schema: cdp_mart
+table_name: dim_campaign
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Bảng thông tin campaign marketing (dim_campaign)"
+grain: "1 dòng = 1 campaign marketing (theo campaign_id)"
+
+description: >
+  Bảng dimension lưu thông tin campaign marketing: mã/tên campaign, thời gian
+  bắt đầu/kết thúc, số lượng khách hàng mục tiêu, ngân hàng liên quan, period
+  và danh sách voucher/campvoucher. Thường được join với các bảng fact giao dịch
+  hoặc bảng hành vi khách hàng để phân tích hiệu quả chiến dịch.
+
+tags:
+  - dimension_table
+  - campaign
+  - marketing
+  - promotion
+
+primary_key:
+  - campaign_id
+
+foreign_keys:
+  - column: bank_code
+    references_table: "lakehouse.lh_vnfilm_v2.bank"
+    references_column: "code"
+    relation: "many_to_one"
+    description: "Join sang bảng bank để phân tích campaign theo ngân hàng phát hành."
+
+time_columns:
+  - campaign_start_at
+  - campaign_end_at
+  - campaign_start_at_gmt_7
+  - campaign_end_at_gmt_7
+  - created_date
+  - end_date
+
+recommended_filters:
+  - "campaign_start_at_gmt_7, campaign_end_at_gmt_7 (hoặc created_date) cho lọc theo thời gian chạy campaign"
+  - "bank_code để lọc theo ngân hàng phát hành"
+  - "period để phân tích theo giai đoạn/time bucket của campaign"
+
+concepts:
+  - name: campaign
+    synonyms: ["chiến dịch", "campaign", "khuyến mãi", "promotion", "chương trình"]
+
+  - name: bank
+    synonyms: ["ngân hàng", "bank", "issuer"]
+
+  - name: voucher
+    synonyms: ["voucher", "mã giảm giá", "mã khuyến mãi", "vouchercode"]
+
+  - name: period
+    synonyms: ["kỳ", "giai đoạn", "period", "thời đoạn"]
+
+columns:
+  campaign_id:
+    data_type: varchar
+    business_name: "ID campaign"
+    description: "Định danh duy nhất của campaign marketing."
+    semantics: [id, primary, campaign]
+    pii: false
+
+  campaign_name:
+    data_type: varchar
+    business_name: "Tên campaign"
+    description: "Tên hiển thị của chiến dịch marketing."
+    semantics: [name, campaign]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Mã campaign"
+    description: "Mã code nội bộ/hiển thị dùng để nhận diện campaign."
+    semantics: [code, campaign]
+
+  master_campaign_id:
+    data_type: varchar
+    description: "ID campaign cha/master, dùng để group nhiều campaign con (nếu có)."
+    semantics: [id, campaign, master]
+
+  service_code:
+    data_type: varchar
+    description: "Mã service/hệ thống triển khai campaign."
+    semantics: [code, service]
+
+  campaign_start_at:
+    data_type: timestamp(6)
+    description: "Thời điểm bắt đầu campaign (UTC hoặc timezone hệ thống)."
+    semantics: [date, start_time, campaign]
+
+  campaign_end_at:
+    data_type: timestamp(6)
+    description: "Thời điểm kết thúc campaign (UTC hoặc timezone hệ thống)."
+    semantics: [date, end_time, campaign]
+
+  num_cus_target:
+    data_type: bigint
+    description: "Số lượng khách hàng mục tiêu (target) của campaign."
+    semantics: [count, customer, target]
+
+  bank_code:
+    data_type: varchar
+    description: "Mã ngân hàng gắn với campaign (tham chiếu sang bảng bank.code)."
+    semantics: [code, bank]
+
+  period:
+    data_type: varchar
+    description: "Kỳ/giai đoạn/nhóm thời gian của campaign (ví dụ theo tháng/quý)."
+    semantics: [period, grouping, time_bucket]
+
+  campvoucherids:
+    data_type: array(varchar)
+    description: "Danh sách ID campvoucher liên quan campaign (mảng)."
+    semantics: [list, voucher, id]
+
+  vouchercodes:
+    data_type: array(varchar)
+    description: "Danh sách mã voucher áp dụng trong campaign (mảng)."
+    semantics: [list, voucher, code]
+
+  campaign_start_at_gmt_7:
+    data_type: timestamp(6)
+    description: "Thời điểm bắt đầu campaign theo giờ GMT+7."
+    semantics: [date, start_time, campaign, gmt7]
+
+  campaign_end_at_gmt_7:
+    data_type: timestamp(6)
+    description: "Thời điểm kết thúc campaign theo giờ GMT+7."
+    semantics: [date, end_time, campaign, gmt7]
+
+  created_date:
+    data_type: date
+    description: "Ngày tạo bản ghi campaign trong hệ thống."
+    semantics: [date, created_time]
+
+  end_date:
+    data_type: date
+    description: "Ngày kết thúc hiệu lực campaign (có thể khác campaign_end_at nếu là ngày logic)."
+    semantics: [date, end_date, campaign]
+
+  master_campaign_code:
+    data_type: varchar
+    description: "Mã code của master campaign (nếu có)."
+    semantics: [code, campaign, master]
+
+  master_campaign_name:
+    data_type: varchar
+    description: "Tên master campaign (nếu có)."
+    semantics: [name, campaign, master]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: true
+    preferred_time_filter: "campaign_start_at_gmt_7"
+    allowed_time_columns:
+      - campaign_start_at
+      - campaign_end_at
+      - campaign_start_at_gmt_7
+      - campaign_end_at_gmt_7
+      - created_date
+      - end_date
+    forbidden_columns: []
+
+sample_questions:
+  - "Danh sách các campaign đang chạy trong thời điểm hiện tại là gì?"
+  - "Mỗi ngân hàng đang có bao nhiêu campaign active trong tháng này?"
+  - "Tổng số khách hàng target theo từng campaign là bao nhiêu?"
+  - "Những campaign nào sử dụng voucher cụ thể (theo vouchercode)?"
+
+sample_queries:
+  - description: "Campaign đang active tại thời điểm hiện tại (theo GMT+7)"
+    sql: |
+      SELECT
+        campaign_id,
+        campaign_name,
+        campaign_code,
+        bank_code,
+        campaign_start_at_gmt_7,
+        campaign_end_at_gmt_7
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE campaign_start_at_gmt_7 <= current_timestamp
+        AND campaign_end_at_gmt_7 >= current_timestamp;
+
+  - description: "Số lượng campaign active theo ngân hàng trong một khoảng thời gian"
+    sql: |
+      SELECT
+        bank_code,
+        COUNT(*) AS active_campaign_count
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE campaign_start_at_gmt_7 <= DATE '2025-12-31'
+        AND campaign_end_at_gmt_7 >= DATE '2025-12-01'
+      GROUP BY bank_code
+      ORDER BY active_campaign_count DESC;
+
+  - description: "Tổng số khách hàng target theo từng campaign"
+    sql: |
+      SELECT
+        campaign_id,
+        campaign_name,
+        num_cus_target
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE num_cus_target IS NOT NULL
+      ORDER BY num_cus_target DESC;
