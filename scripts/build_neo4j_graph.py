@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 import yaml
 from neo4j import GraphDatabase, Driver, ManagedTransaction
 
-load_dotenv()
+load_dotenv(override=True)  # Force reload
 
 # Configure logging
 logging.basicConfig(

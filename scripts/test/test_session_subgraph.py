@@ -2,6 +2,9 @@
 """
 Test Script: Verify SubGraph Storage and Agent Access
 
+Usage:
+    python scripts/test/test_session_subgraph.py
+
 This script demonstrates:
 1. Building a session with SubGraph
 2. How SubGraph is stored
@@ -13,13 +16,12 @@ import sys
 import json
 from pathlib import Path
 
-# Add both root and src to path
-root_dir = Path(__file__).parent.parent
+# Add project root to path (go up 2 levels: test -> scripts -> project root)
+root_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(root_dir))
-sys.path.insert(0, str(root_dir / "src"))
 
-from context_fusion import build_session, EDASession
-from context_fusion.session_context import cache_session, get_cached_session
+from src.context_fusion import build_session, EDASession
+from src.context_fusion.session_context import cache_session, get_cached_session
 
 
 async def test_session_and_subgraph():

@@ -18,3 +18,6 @@ python scripts/test/test_context_fusion.py "Tại sao doanh thu giảm?"
 # Command to test planner integration
 python scripts/test/test_planner_integration.py "Tại sao doanh thu giảm?"
 
+# Command to test session and subgraph
+python scripts/test/test_session_subgraph.py
+

@@ -15,7 +15,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load .env file first
-load_dotenv()
+load_dotenv(override=True)  # Force reload env vars even if already set
 
 
 class OpenAIConfig(BaseSettings):

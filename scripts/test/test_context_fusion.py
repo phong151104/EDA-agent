@@ -24,7 +24,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)  # Force reload
 
 from src.context_fusion import (
     QueryRewriter,
