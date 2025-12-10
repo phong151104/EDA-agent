@@ -6,11 +6,16 @@ Centralized configuration using Pydantic Settings.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Load .env file first
+load_dotenv()
 
 
 class OpenAIConfig(BaseSettings):
@@ -86,10 +91,12 @@ class SandboxConfig(BaseSettings):
 class VectorIndexConfig(BaseSettings):
     """Vector index configuration."""
     
+    index_name: str = Field(default="schema_embeddings", description="Vector index name prefix")
     dimensions: int = Field(default=1536, description="Embedding dimensions")
     similarity_function: Literal["cosine", "euclidean"] = Field(
         default="cosine", description="Similarity function"
     )
+    top_k: int = Field(default=10, description="Default number of results to return")
     labels: list[str] = Field(
         default=["Table", "Column", "Metric", "Concept"],
         description="Node labels to index"
