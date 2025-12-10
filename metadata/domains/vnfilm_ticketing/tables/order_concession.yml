@@ -30,12 +30,6 @@ foreign_keys:
     relation: "many_to_one"
     description: "Join sang bảng orders để lấy thông tin đơn hàng tổng."
 
-  - column: campaign_id
-    references_table: "lakehouse.lh_vnfilm_v2.campaign"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Join sang bảng campaign (nếu có áp dụng)."
-
 time_columns:
   - created_date
   - modified_date
