@@ -24,12 +24,6 @@ primary_key:
   - id
 
 foreign_keys:
-  - column: pre_order_id
-    references_table: "lakehouse.lh_vnfilm_v2.pre_order"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Pre-order tương ứng (nếu hệ thống có bảng pre_order)."
-
   - column: order_id
     references_table: "lakehouse.lh_vnfilm_v2.orders"
     references_column: "id"
@@ -49,7 +43,7 @@ recommended_filters:
   - "created_date cho phân tích theo thời gian (ngày/giờ) tracking"
   - "device_type, os_version, sdk_version cho phân tích theo thiết bị/phiên bản app"
   - "bank_id hoặc bank_identity_hash cho phân tích theo ngân hàng (áp RLS nếu cần)"
-  - "order_id/pre_order_id khi truy vết một đơn hàng cụ thể"
+  - "order_id khi truy vết một đơn hàng cụ thể"
 
 concepts:
   - name: tracking
@@ -70,12 +64,6 @@ columns:
     business_name: "ID bản ghi tracking"
     description: "Khóa chính của bảng customer_tracking."
     semantics: [id, primary, tracking]
-    pii: false
-
-  pre_order_id:
-    data_type: bigint
-    description: "ID pre_order liên quan (nếu đang ở bước pre_order)."
-    semantics: [id, pre_order, join_key]
     pii: false
 
   order_id:

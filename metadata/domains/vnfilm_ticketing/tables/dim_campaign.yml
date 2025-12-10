@@ -1,0 +1,217 @@
+catalog: lakehouse
+schema: cdp_mart
+table_name: dim_campaign
+domain: marketing_campaign
+
+table_type: dim
+business_name: "Dimension chiến dịch marketing (dim_campaign)"
+grain: "1 dòng = 1 campaign duy nhất (theo campaign_id hoặc campaign_code)"
+
+description: >
+  Bảng dimension chứa thông tin mô tả chiến dịch marketing: tên, mã chiến dịch, campaign cha,
+  thời gian chạy, service áp dụng, danh sách voucher/campvoucherids, loại chiến dịch, target khách hàng
+  và các trường thời gian chuẩn GMT+7. Dùng để phân tích hiệu quả campaign theo thời gian, region,
+  ngân hàng, số lượng người được target, v.v.
+
+tags:
+  - dim
+  - marketing
+  - campaign
+  - voucher
+  - cdp
+  - analytics
+
+primary_key:
+  - campaign_id
+
+foreign_keys:
+  - column: master_campaign_id
+    references_table: "lakehouse.cdp_mart.dim_campaign"
+    references_column: "campaign_id"
+    relation: "hierarchy"
+    description: "Campaign cha (nếu campaign thuộc một nhóm campaign lớn)."
+
+time_columns:
+  - campaign_start_at
+  - campaign_end_at
+  - campaign_start_at_gmt_7
+  - campaign_end_at_gmt_7
+  - created_date
+  - end_date
+
+recommended_filters:
+  - "campaign_start_at_gmt_7 / campaign_end_at_gmt_7 cho phân tích thời gian"
+  - "bank_code khi phân tích campaign theo ngân hàng"
+  - "service_code khi phân tích theo dịch vụ áp dụng"
+  - "master_campaign_code để nhóm theo campaign cha"
+  - "period khi cần phân tích theo kỳ (period marketing)"
+
+concepts:
+  - name: campaign
+    synonyms: ["chiến dịch", "campaign", "marketing campaign", "promo campaign"]
+
+  - name: voucher
+    synonyms: ["voucher", "mã giảm giá", "promo code"]
+
+  - name: period
+    synonyms: ["kỳ", "period", "thời đoạn"]
+
+columns:
+  campaign_id:
+    data_type: varchar
+    business_name: "ID chiến dịch"
+    description: "Mã định danh duy nhất cho campaign."
+    semantics: [id, campaign]
+
+  campaign_name:
+    data_type: varchar
+    business_name: "Tên chiến dịch"
+    description: "Tên hiển thị của campaign."
+    semantics: [name, campaign]
+
+  campaign_code:
+    data_type: varchar
+    business_name: "Code chiến dịch"
+    description: "Mã code duy nhất của chiến dịch."
+    semantics: [code, campaign]
+
+  master_campaign_id:
+    data_type: varchar
+    business_name: "ID campaign cha"
+    description: "Tham chiếu đến chiến dịch cha bao trùm."
+    semantics: [id, campaign, parent]
+
+  service_code:
+    data_type: varchar
+    business_name: "Service áp dụng"
+    description: "Mã dịch vụ mà campaign áp dụng."
+    semantics: [service, code]
+
+  campaign_start_at:
+    data_type: timestamp(6)
+    business_name: "Start time (UTC)"
+    description: "Thời gian bắt đầu campaign theo UTC."
+    semantics: [date, campaign_start]
+
+  campaign_end_at:
+    data_type: timestamp(6)
+    business_name: "End time (UTC)"
+    description: "Thời gian kết thúc campaign theo UTC."
+    semantics: [date, campaign_end]
+
+  num_cus_target:
+    data_type: bigint
+    business_name: "Số lượng khách hàng mục tiêu"
+    description: "Tổng số khách hàng được target trong campaign."
+    semantics: [count, customer]
+
+  bank_code:
+    data_type: varchar
+    business_name: "Ngân hàng áp dụng"
+    description: "Mã ngân hàng tham gia campaign."
+    semantics: [bank, code]
+
+  period:
+    data_type: varchar
+    business_name: "Kỳ phân tích"
+    description: "Thời đoạn (period) được hệ thống gán cho campaign."
+    semantics: [period, marketing]
+
+  campvoucherids:
+    data_type: array(varchar)
+    business_name: "Danh sách ID voucher"
+    description: "Danh sách voucher được phát hành trong campaign."
+    semantics: [voucher, list]
+
+  vouchercodes:
+    data_type: array(varchar)
+    business_name: "Danh sách mã voucher"
+    description: "List mã voucher dùng trong chiến dịch."
+    semantics: [voucher, code, list]
+
+  campaign_start_at_gmt_7:
+    data_type: timestamp(6)
+    business_name: "Thời gian bắt đầu (GMT+7)"
+    description: "Thời gian campaign bắt đầu tại múi giờ Việt Nam."
+    semantics: [date, campaign_start, gmt7]
+
+  campaign_end_at_gmt_7:
+    data_type: timestamp(6)
+    business_name: "Thời gian kết thúc (GMT+7)"
+    description: "Thời gian campaign kết thúc tại múi giờ Việt Nam."
+    semantics: [date, campaign_end, gmt7]
+
+  created_date:
+    data_type: date
+    business_name: "Ngày tạo campaign"
+    description: "Ngày campaign được ghi nhận trong hệ thống."
+    semantics: [date, created_time]
+
+  end_date:
+    data_type: date
+    business_name: "Ngày campaign kết thúc thực tế"
+    description: "Ngày campaign được đóng hoặc hết hiệu lực."
+    semantics: [date, end_time]
+
+  master_campaign_code:
+    data_type: varchar
+    business_name: "Code chiến dịch cha"
+    description: "Mã campaign cha theo dạng text."
+    semantics: [code, master_campaign]
+
+  master_campaign_name:
+    data_type: varchar
+    business_name: "Tên chiến dịch cha"
+    description: "Tên hiển thị của campaign cha."
+    semantics: [name, master_campaign]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "campaign_start_at_gmt_7"
+    allowed_time_columns:
+      - campaign_start_at
+      - campaign_end_at
+      - campaign_start_at_gmt_7
+      - campaign_end_at_gmt_7
+      - created_date
+    forbidden_columns: []
+
+sample_questions:
+  - "Các campaign đang active trong tuần này là gì?"
+  - "Danh sách voucher code của campaign mùa hè?"
+  - "Tổng số khách hàng mà campaign A hướng tới?"
+  - "Campaign nào của ngân hàng XYZ chạy trong tháng 7?"
+  - "Thời gian bắt đầu/kết thúc của campaign ABC?"
+
+sample_queries:
+  - description: "Danh sách campaign active hôm nay"
+    sql: |
+      SELECT campaign_id, campaign_name, campaign_start_at_gmt_7, campaign_end_at_gmt_7
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE campaign_start_at_gmt_7 <= current_date
+        AND campaign_end_at_gmt_7 >= current_date
+      ORDER BY campaign_start_at_gmt_7;
+
+  - description: "Danh sách voucher của 1 campaign"
+    sql: |
+      SELECT
+        campaign_id,
+        vouchercodes
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE campaign_code = :campaign_code;
+
+  - description: "Campaign theo ngân hàng trong tháng gần nhất"
+    sql: |
+      SELECT
+        bank_code,
+        campaign_id,
+        campaign_name,
+        campaign_start_at_gmt_7,
+        campaign_end_at_gmt_7
+      FROM lakehouse.cdp_mart.dim_campaign
+      WHERE campaign_start_at_gmt_7 >= date_trunc('month', current_date) - interval '1 month'
+      ORDER BY campaign_start_at_gmt_7;

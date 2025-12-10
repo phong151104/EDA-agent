@@ -27,13 +27,13 @@ foreign_keys:
   - column: order_id
     references_table: "lakehouse.lh_vnfilm_v2.orders"
     references_column: "id"
-    relation: "many_to_one"
+    relation: "one_to_one"
     description: "Email thuộc về đơn hàng nào (nếu có)."
 
   - column: order_refund_id
     references_table: "lakehouse.lh_vnfilm_v2.order_refund"
     references_column: "id"
-    relation: "many_to_one"
+    relation: "one_to_one"
     description: "Email thuộc về giao dịch refund nào (nếu có)."
 
   - column: original_id

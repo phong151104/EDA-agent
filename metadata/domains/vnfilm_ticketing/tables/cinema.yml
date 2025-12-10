@@ -17,7 +17,6 @@ tags:
   - cinema
   - location
   - vendor
-  - branch
   - vnfilm
 
 primary_key:
@@ -30,14 +29,8 @@ foreign_keys:
     relation: "many_to_one"
     description: "Vendor/hệ thống rạp mà cinema thuộc về."
 
-  - column: branch_id
-    references_table: "lakehouse.lh_vnfilm_v2.branch"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Branch/chi nhánh mà cinema thuộc về."
-
   - column: location_id
-    references_table: "lakehouse.lh_vnfilm_v2.location"
+    references_table: "lakehouse.lh_vnfilm_v2.locations"
     references_column: "id"
     relation: "many_to_one"
     description: "Vị trí/khu vực địa lý được mapping cho cinema."
@@ -49,7 +42,6 @@ time_columns:
 recommended_filters:
   - "status cho lọc theo rạp đang hoạt động (ACTIVE)"
   - "vendor_id để phân tích theo hệ thống rạp"
-  - "branch_id cho phân tích theo cụm rạp"
   - "location_id cho phân tích theo khu vực"
   - "keyword để lọc tìm kiếm theo nhiều thuộc tính"
 

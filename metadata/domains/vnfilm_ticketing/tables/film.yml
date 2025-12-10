@@ -30,24 +30,6 @@ foreign_keys:
     relation: "many_to_one"
     description: "Vendor sở hữu hoặc cung cấp dữ liệu phim tương ứng."
 
-  - column: status_id
-    references_table: "lakehouse.lh_vnfilm_v2.status"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Trạng thái phim (đang chiếu, ngừng chiếu...)."
-
-  - column: category_en
-    references_table: "lakehouse.lh_vnfilm_v2.film_category"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Mapping thể loại phim bản EN."
-
-  - column: country_en
-    references_table: "lakehouse.lh_vnfilm_v2.country"
-    references_column: "id"
-    relation: "many_to_one"
-    description: "Mapping quốc gia phim bản EN."
-
 time_columns:
   - publish_date
   - created_date
@@ -184,7 +166,7 @@ columns:
 
   mapping_id:
     data_type: bigint
-    description: "ID mapping nội bộ."
+    description: "ID mapping nội bộ, cùng 1 phim chung mapping_id."
     semantics: [mapping, internal]
 
   vendor_film_id:
