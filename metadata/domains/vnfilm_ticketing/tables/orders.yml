@@ -383,28 +383,62 @@ sample_questions:
   - "Lợi nhuận từ vé (vnpay_seat_profit) theo từng nguồn đặt (source_booking)?"
 
 sample_queries:
-  - description: "Báo cáo doanh thu và lợi nhuận theo ngày"
+  - description: "Thống kê khách hàng giao dịch thành công - dùng bank_identity_hash làm mã KH"
     sql: |
       SELECT
-        date_trunc('day', created_date) as report_date,
-        COUNT(*) as total_orders,
-        SUM(CASE WHEN status = 'payment' THEN 1 ELSE 0 END) as success_orders,
-        SUM(CASE WHEN status = 'payment' THEN vnpay_final_amount ELSE 0 END) as revenue,
-        SUM(CASE WHEN status = 'payment' THEN vnpay_seat_profit + vnpay_concession_profit ELSE 0 END) as total_profit
-      FROM lakehouse.lh_vnfilm_v2.orders
-      WHERE created_date >= date_trunc('month', current_date)
-      GROUP BY 1
-      ORDER BY 1 DESC
-
-  - description: "Thống kê lỗi xuất vé (Payment Success nhưng Issue Failed)"
-    sql: |
-      SELECT
-        pay_code,
-        created_date,
-        vendor_booking_no,
-        billing_pay_source
+        bank_identity_hash,
+        COUNT(*) AS total_transactions,
+        SUM(vnpay_final_amount) AS total_revenue
       FROM lakehouse.lh_vnfilm_v2.orders
       WHERE status = 'payment'
-        AND issue_status != 'issued'
-        AND created_date >= date_trunc('day', current_date) - interval '7' day
-      ORDER BY created_date DESC
+        AND created_date >= DATE '2025-01-01'
+        AND created_date < DATE '2025-04-01'
+      GROUP BY bank_identity_hash
+      ORDER BY total_revenue DESC
+      LIMIT 100
+
+  - description: "Doanh thu theo vendor trong Q1 2025 - JOIN orders với order_film"
+    sql: |
+      SELECT
+        of.vendor_name,
+        COUNT(DISTINCT o.bank_identity_hash) AS unique_customers,
+        COUNT(*) AS total_orders,
+        SUM(o.vnpay_final_amount) AS total_revenue
+      FROM lakehouse.lh_vnfilm_v2.orders o
+      JOIN lakehouse.lh_vnfilm_v2.order_film of ON o.id = of.id
+      WHERE o.status = 'payment'
+        AND o.created_date >= DATE '2025-01-01'
+        AND o.created_date < DATE '2025-04-01'
+      GROUP BY of.vendor_name
+      ORDER BY total_revenue DESC
+
+  - description: "Thống kê giao dịch thành công vs thất bại theo rạp - dùng cinema_name_vi từ order_film"
+    sql: |
+      SELECT
+        of.cinema_name_vi,
+        COUNT(CASE WHEN o.status = 'payment' THEN 1 END) AS success_orders,
+        COUNT(CASE WHEN o.status = 'expired' THEN 1 END) AS expired_orders,
+        COUNT(CASE WHEN o.status = 'initial' THEN 1 END) AS pending_orders
+      FROM lakehouse.lh_vnfilm_v2.orders o
+      JOIN lakehouse.lh_vnfilm_v2.order_film of ON o.id = of.id
+      WHERE o.created_date >= DATE '2025-01-01'
+        AND o.created_date < DATE '2025-04-01'
+      GROUP BY of.cinema_name_vi
+      ORDER BY success_orders DESC
+
+  - description: "Top phim theo doanh thu - JOIN orders với order_film lấy film_name_vi"
+    sql: |
+      SELECT
+        of.film_name_vi,
+        of.vendor_name,
+        COUNT(*) AS total_orders,
+        SUM(o.number_of_seats) AS total_seats,
+        SUM(o.vnpay_final_amount) AS total_revenue
+      FROM lakehouse.lh_vnfilm_v2.orders o
+      JOIN lakehouse.lh_vnfilm_v2.order_film of ON o.id = of.id
+      WHERE o.status = 'payment'
+        AND o.created_date >= DATE '2025-01-01'
+        AND o.created_date < DATE '2025-04-01'
+      GROUP BY of.film_name_vi, of.vendor_name
+      ORDER BY total_revenue DESC
+      LIMIT 10

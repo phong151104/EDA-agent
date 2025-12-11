@@ -5,12 +5,30 @@ Run: python scripts/test/test_text_to_sql.py
 """
 
 import asyncio
+import re
 import sys
 from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+
+def format_sql(sql: str) -> str:
+    """Format SQL for readability."""
+    # Add newlines before main keywords
+    keywords = ['SELECT', 'FROM', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
+                'WHERE', 'AND', 'OR', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'ON']
+    
+    formatted = sql.strip()
+    for kw in keywords:
+        # Add newline before keyword (except at start)
+        formatted = re.sub(rf'(?<!^)\b({kw})\b', rf'\n\1', formatted, flags=re.IGNORECASE)
+    
+    # Clean up multiple newlines
+    formatted = re.sub(r'\n+', '\n', formatted)
+    
+    return formatted.strip()
 
 
 async def main():
@@ -63,10 +81,11 @@ async def main():
                 print(f"\n  ✅ Session: {result.session_id}")
                 print(f"  📊 Tables: {', '.join(result.tables_used or [])}")
                 print(f"\n  📄 SQL:")
-                print("  " + "-" * 50)
-                for line in result.sql.split("\n"):
-                    print(f"  {line}")
-                print("  " + "-" * 50)
+                print("-" * 60)
+                # Format SQL for readability
+                formatted_sql = format_sql(result.sql)
+                print(formatted_sql)
+                print("-" * 60)
             else:
                 print(f"  ❌ Error: {result.error}")
             
