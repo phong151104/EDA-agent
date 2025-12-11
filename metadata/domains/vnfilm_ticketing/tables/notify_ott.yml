@@ -193,13 +193,6 @@ sample_questions:
   - "Số lần retry (original_id không null) của OTT notification?"
 
 sample_queries:
-  - description: "Đếm OTT notification gửi thất bại trong 24h qua"
-    sql: |
-      SELECT COUNT(*) AS failed_notifications
-      FROM lakehouse.lh_vnfilm_v2.notify_ott
-      WHERE status = 'FAIL'
-        AND created_date >= now() - interval '1 day'
-
   - description: "Thống kê số OTT notification theo loại"
     sql: |
       SELECT
@@ -209,7 +202,7 @@ sample_queries:
       GROUP BY type
       ORDER BY total_notifications DESC
 
-  - description: "Lịch sử OTT notification của một đơn hàng"
+  - description: "Lịch sử OTT notification của đơn hàng 1"
     sql: |
       SELECT
         id,
@@ -217,6 +210,6 @@ sample_queries:
         status,
         created_date
       FROM lakehouse.lh_vnfilm_v2.notify_ott
-      WHERE order_id = :order_id
+      WHERE order_id = 1
       ORDER BY created_date DESC
       LIMIT 200

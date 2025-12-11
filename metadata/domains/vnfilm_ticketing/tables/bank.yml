@@ -1,0 +1,275 @@
+catalog: lakehouse
+schema: lh_vnfilm_v2
+table_name: bank
+domain: vnfilm_ticketing
+
+table_type: dim
+business_name: "Dimension ngân hàng / kênh ngân hàng (bank)"
+grain: "1 dòng = 1 ngân hàng hoặc 1 kênh banking/app cụ thể"
+
+description: >
+  Bảng dimension lưu thông tin ngân hàng và các kênh app/mobile banking tương ứng.
+  Dùng để giải nghĩa bank_id / bank_code / gateway_bank_code trong các bảng fact (orders, billing…),
+  đồng thời cho biết các loại hỗ trợ như OTT, SMS, promotion, email, live activity.
+
+tags:
+  - dim
+  - bank
+  - channel
+  - payment
+  - vnfilm
+
+primary_key:
+  - id
+
+foreign_keys: []
+
+time_columns:
+  - created_date
+  - modified_date
+
+recommended_filters:
+  - "code hoặc name_vi/name_en cho lọc ngân hàng/kênh"
+  - "gateway_bank_code khi join theo code từ hệ thống cổng"
+  - "promotion_support / ott_support / sms_support / email_support để lọc theo loại hỗ trợ"
+  - "status để chỉ lấy ngân hàng đang active"
+
+concepts:
+  - name: bank
+    synonyms: ["ngân hàng", "bank", "tổ chức phát hành", "issuer"]
+
+  - name: bank_channel
+    synonyms: ["kênh ngân hàng", "mobile banking", "app bank", "bank app", "kênh thanh toán"]
+
+  - name: notification_support
+    synonyms: ["ott", "sms", "email", "notify", "thông báo"]
+
+columns:
+  id:
+    data_type: bigint
+    business_name: "ID ngân hàng/kênh"
+    description: "Khóa chính của bảng bank."
+    semantics: [id, primary, bank]
+    pii: false
+
+  code:
+    data_type: varchar
+    business_name: "Mã ngân hàng/kênh nội bộ"
+    description: "Code nội bộ đại diện ngân hàng hoặc app banking (vd: vtb, bidv, vnpay_wallet…)."
+    semantics: [code, bank]
+    pii: false
+
+  name_vi:
+    data_type: varchar
+    business_name: "Tên hiển thị (VI)"
+    description: "Tên ngân hàng/kênh hiển thị tiếng Việt."
+    semantics: [name, bank, vi]
+
+  name_en:
+    data_type: varchar
+    business_name: "Tên hiển thị (EN)"
+    description: "Tên ngân hàng/kênh hiển thị tiếng Anh."
+    semantics: [name, bank, en]
+
+  gateway_bank_code:
+    data_type: varchar
+    business_name: "Mã ngân hàng trên gateway"
+    description: "Mã bank code mà cổng thanh toán/gateway sử dụng (ví dụ 9704xx)."
+    semantics: [code, bank, gateway]
+
+  ott_bank_code:
+    data_type: varchar
+    business_name: "Mã ngân hàng cho OTT"
+    description: "Mã bank code dùng cho kênh OTT/ứng dụng riêng (nếu có)."
+    semantics: [code, bank, ott]
+
+  promotion_bank_code:
+    data_type: varchar
+    business_name: "Mã ngân hàng cho khuyến mại"
+    description: "Code ngân hàng được dùng trong hệ thống khuyến mại/promotion."
+    semantics: [code, bank, promotion]
+
+  ott_support:
+    data_type: varchar
+    business_name: "Trạng thái hỗ trợ OTT"
+    description: "Ngân hàng/kênh có hỗ trợ OTT hay không (supported/unsupported)."
+    semantics: [flag, ott, support]
+
+  sms_support:
+    data_type: varchar
+    business_name: "Trạng thái hỗ trợ SMS"
+    description: "Ngân hàng/kênh có hỗ trợ gửi SMS hay không."
+    semantics: [flag, sms, support]
+
+  promotion_support:
+    data_type: varchar
+    business_name: "Trạng thái hỗ trợ khuyến mại"
+    description: "Ngân hàng/kênh có tham gia các chương trình khuyến mại hay không."
+    semantics: [flag, promotion, support]
+
+  status:
+    data_type: varchar
+    business_name: "Trạng thái ngân hàng/kênh"
+    description: "Trạng thái hoạt động (vd: ACTIVE/INACTIVE)."
+    semantics: [status]
+
+  created_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm tạo"
+    description: "Thời điểm bản ghi bank được tạo."
+    semantics: [date, created_time]
+
+  created_by:
+    data_type: varchar
+    business_name: "Người tạo"
+    description: "User/service tạo bản ghi."
+    semantics: [user_identity, creator]
+    pii: true
+    sensitive: true
+
+  modified_date:
+    data_type: timestamp(6)
+    business_name: "Thời điểm cập nhật"
+    description: "Thời điểm bản ghi bank được cập nhật."
+    semantics: [date, modified_time]
+
+  modified_by:
+    data_type: varchar
+    business_name: "Người cập nhật"
+    description: "User/service cập nhật bản ghi."
+    semantics: [user_identity, modifier]
+    pii: true
+    sensitive: true
+
+  service_code:
+    data_type: varchar
+    business_name: "Service code"
+    description: "Mã dịch vụ liên quan đến bank/kênh (nếu có)."
+    semantics: [service, code]
+
+  provider_code:
+    data_type: varchar
+    business_name: "Provider code"
+    description: "Mã provider/đối tác cung cấp dịch vụ bank/kênh."
+    semantics: [provider, code]
+
+  ott_pilot_support:
+    data_type: varchar
+    business_name: "Trạng thái pilot OTT"
+    description: "Cho biết bank/kênh đang pilot OTT hay không."
+    semantics: [flag, ott, pilot]
+
+  sms_pilot_support:
+    data_type: varchar
+    business_name: "Trạng thái pilot SMS"
+    description: "Cho biết bank/kênh đang pilot SMS hay không."
+    semantics: [flag, sms, pilot]
+
+  promotion_pilot_support:
+    data_type: varchar
+    business_name: "Trạng thái pilot promotion"
+    description: "Cho biết bank/kênh đang pilot chương trình khuyến mại."
+    semantics: [flag, promotion, pilot]
+
+  channel_ids:
+    data_type: varchar
+    business_name: "Danh sách channel id"
+    description: "Danh sách id kênh (nếu một ngân hàng có nhiều kênh con)."
+    semantics: [channel, list]
+
+  email_pilot_support:
+    data_type: varchar
+    business_name: "Trạng thái pilot email"
+    description: "Cho biết bank/kênh đang pilot gửi email hay không."
+    semantics: [flag, email, pilot]
+
+  email_pilot_support_hash:
+    data_type: varchar
+    business_name: "Hash thông tin pilot email"
+    description: "Hash metadata liên quan đến pilot email (nếu có)."
+    semantics: [hash, email, pilot]
+    pii: false
+    sensitive: true
+
+  email_support:
+    data_type: varchar
+    business_name: "Trạng thái hỗ trợ email"
+    description: "Ngân hàng/kênh có hỗ trợ gửi email hay không."
+    semantics: [flag, email, support]
+
+  email_support_hash:
+    data_type: varchar
+    business_name: "Hash thông tin hỗ trợ email"
+    description: "Hash metadata liên quan đến cấu hình email."
+    semantics: [hash, email, support]
+    pii: false
+    sensitive: true
+
+  logo:
+    data_type: varchar
+    business_name: "Logo ngân hàng/kênh"
+    description: "URL hoặc path tới logo hiển thị."
+    semantics: [asset, logo, bank]
+
+  live_activity_support:
+    data_type: varchar
+    business_name: "Trạng thái hỗ trợ live activity"
+    description: "Ngân hàng/kênh có hỗ trợ live activity (vd: realtime status trên app) hay không."
+    semantics: [flag, live_activity, support]
+
+guardrails:
+  sql:
+    read_only: true
+    require_limit: true
+    default_limit: 200
+    forbid_select_star: false
+    preferred_time_filter: "created_date"
+    allowed_time_columns:
+      - created_date
+      - modified_date
+    forbidden_columns:
+      - created_by
+      - modified_by
+
+sample_questions:
+  - "Những ngân hàng/kênh nào đang hỗ trợ promotion và OTT?"
+  - "Danh sách bank theo gateway_bank_code để join với log giao dịch?"
+  - "Ngân hàng nào chỉ hỗ trợ SMS mà không hỗ trợ OTT?"
+  - "Các kênh thuộc ngân hàng VietinBank đang active là gì?"
+
+sample_queries:
+  - description: "Danh sách ngân hàng/kênh đang active với promotion_support = 'supported'"
+    sql: |
+      SELECT
+        id,
+        code,
+        name_vi,
+        gateway_bank_code,
+        promotion_support
+      FROM lakehouse.lh_vnfilm_v2.bank
+      WHERE status = 'ACTIVE'
+        AND promotion_support = 'supported'
+      ORDER BY name_vi;
+
+  - description: "Các kênh ngân hàng có hỗ trợ OTT nhưng chưa hỗ trợ SMS"
+    sql: |
+      SELECT
+        id,
+        code,
+        name_vi,
+        ott_support,
+        sms_support
+      FROM lakehouse.lh_vnfilm_v2.bank
+      WHERE ott_support = 'supported'
+        AND sms_support = 'unsupported'
+      ORDER BY name_vi;
+
+  - description: "Mapping gateway_bank_code để join với orders"
+    sql: |
+      SELECT
+        id AS bank_id,
+        code AS bank_code,
+        name_vi,
+        gateway_bank_code
+      FROM lakehouse.lh_vnfilm_v2.bank
+      ORDER BY gateway_bank_code;

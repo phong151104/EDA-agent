@@ -174,7 +174,7 @@ sample_queries:
         price,
         status
       FROM lakehouse.lh_vnfilm_v2.concession
-      WHERE status = 'ACTIVE'
+      WHERE status = 'active'
       ORDER BY vendor_id, price DESC
       LIMIT 200
 
