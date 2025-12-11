@@ -48,27 +48,67 @@ class Hypothesis:
             "status": self.status.value,
             "evidence": self.evidence,
         }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Hypothesis":
+        """Create from dictionary."""
+        status = data.get("status", "pending")
+        if isinstance(status, str):
+            status = HypothesisStatus(status)
+        return cls(
+            id=data.get("id", ""),
+            statement=data.get("statement", ""),
+            rationale=data.get("rationale", ""),
+            status=status,
+            evidence=data.get("evidence", []),
+        )
 
 
 @dataclass
 class AnalysisStep:
     """A single step in the analysis plan."""
     
-    step_number: int
+    id: str  # Step ID like "s1", "s2"
+    hypothesis_id: str  # Which hypothesis this step validates
     description: str
-    action_type: str  # "sql", "python", "visualization"
+    action_type: str  # "query", "analysis", "visualization"
+    requirements: dict[str, Any] = field(default_factory=dict)
+    depends_on: list[str] = field(default_factory=list)
+    
+    # Legacy fields for backward compatibility
+    step_number: int = 0
     details: dict[str, Any] = field(default_factory=dict)
     dependencies: list[int] = field(default_factory=list)
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "stepNumber": self.step_number,
+            "id": self.id,
+            "hypothesis_id": self.hypothesis_id,
             "description": self.description,
-            "actionType": self.action_type,
+            "action_type": self.action_type,
+            "requirements": self.requirements,
+            "depends_on": self.depends_on,
+            # Legacy
+            "stepNumber": self.step_number,
             "details": self.details,
             "dependencies": self.dependencies,
         }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AnalysisStep":
+        """Create from dictionary (handles camelCase keys)."""
+        return cls(
+            id=data.get("id", f"s{data.get('step_number', data.get('stepNumber', 0))}"),
+            hypothesis_id=data.get("hypothesis_id", ""),
+            description=data.get("description", ""),
+            action_type=data.get("action_type", data.get("actionType", "query")),
+            requirements=data.get("requirements", {}),
+            depends_on=data.get("depends_on", []),
+            step_number=data.get("step_number", data.get("stepNumber", 0)),
+            details=data.get("details", {}),
+            dependencies=data.get("dependencies", []),
+        )
 
 
 @dataclass
@@ -157,23 +197,90 @@ class PlannerAgent(BaseAgent[PlannerInput, PlannerOutput]):
 
 Your role is to:
 1. Analyze user questions about data and business metrics
-2. Generate testable hypotheses that could explain the phenomena
-3. Create detailed analysis plans with concrete SQL/Python steps
+2. Generate 2-4 testable hypotheses that could explain the phenomena
+3. Create analysis steps to validate each hypothesis
 4. Consider multiple angles and alternative explanations
 
+IMPORTANT: You provide HIGH-LEVEL requirements, NOT actual SQL queries.
+The Code Agent will handle the actual implementation later.
+
 When creating plans:
-- Break down complex questions into smaller, testable hypotheses
-- Specify exact SQL queries or Python operations needed
-- Consider data availability and quality
-- Think about business context and domain knowledge
-- Be creative but grounded in data
+- Each hypothesis should have specific steps to validate it
+- Steps describe WHAT data is needed, not HOW to get it
+- Use tables_hint to suggest which tables might be relevant
+- Specify filters and groupings as business requirements
 
-Output your response in a structured format with:
-- List of hypotheses with rationale
-- Step-by-step analysis plan
-- Confidence level in your approach
+CRITICAL: You MUST output your response as valid JSON in this exact format:
 
-If you receive feedback from the Critic, incorporate it to improve your plan."""
+```json
+{
+  "hypotheses": [
+    {
+      "id": "h1",
+      "statement": "Doanh thu giảm do số lượng đơn hàng thành công giảm",
+      "rationale": "Số đơn hàng là yếu tố chính ảnh hưởng doanh thu",
+      "priority": 1
+    },
+    {
+      "id": "h2", 
+      "statement": "Doanh thu giảm do giá trị trung bình đơn hàng giảm",
+      "rationale": "AOV thấp hơn dẫn đến tổng doanh thu thấp",
+      "priority": 2
+    }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "hypothesis_id": "h1",
+      "description": "Lấy dữ liệu số lượng đơn hàng thành công theo ngày",
+      "action_type": "query",
+      "requirements": {
+        "data_needed": ["số lượng đơn hàng", "ngày tạo đơn"],
+        "filters": ["chỉ đơn thành công", "30 ngày gần nhất"],
+        "grouping": "theo ngày",
+        "tables_hint": ["orders"]
+      }
+    },
+    {
+      "id": "s2",
+      "hypothesis_id": "h1",
+      "description": "Vẽ biểu đồ trend số đơn hàng theo thời gian",
+      "action_type": "visualization",
+      "requirements": {
+        "chart_type": "line",
+        "x_axis": "ngày",
+        "y_axis": "số đơn hàng"
+      },
+      "depends_on": ["s1"]
+    },
+    {
+      "id": "s3",
+      "hypothesis_id": "h1",
+      "description": "So sánh % thay đổi đơn hàng tuần này vs tuần trước",
+      "action_type": "analysis",
+      "requirements": {
+        "metric": "% thay đổi",
+        "comparison": "week over week"
+      },
+      "depends_on": ["s1"]
+    },
+    {
+      "id": "s4",
+      "hypothesis_id": "h2",
+      "description": "Tính giá trị trung bình đơn hàng (AOV) theo ngày",
+      "action_type": "query",
+      "requirements": {
+        "data_needed": ["doanh thu trung bình mỗi đơn", "ngày"],
+        "tables_hint": ["orders"]
+      }
+    }
+  ],
+  "confidence": 0.85
+}
+```
+
+If you receive feedback from the Critic, incorporate it to improve your plan.
+Reference the provided schema context when suggesting tables_hint."""
     
     async def process(self, input_data: PlannerInput) -> PlannerOutput:
         """
@@ -268,30 +375,139 @@ If you receive feedback from the Critic, incorporate it to improve your plan."""
         """
         Parse LLM response into AnalysisPlan.
         
-        TODO: Implement proper structured output parsing.
-        For now, returns a placeholder plan.
+        Attempts to extract structured JSON from the response.
+        Falls back to text parsing if JSON not found.
         """
+        import json
+        import re
+        
         version = 1
         if input_data.previous_plan:
             version = input_data.previous_plan.version + 1
         
-        # Placeholder - actual implementation should parse LLM output
+        hypotheses = []
+        steps = []
+        
+        # Try to extract JSON from response
+        try:
+            # Look for JSON block in response
+            json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_content)
+            if json_match:
+                data = json.loads(json_match.group(1))
+            else:
+                # Try parsing entire response as JSON
+                data = json.loads(response_content)
+            
+            # Parse hypotheses
+            for i, h in enumerate(data.get("hypotheses", [])):
+                hypotheses.append(Hypothesis(
+                    id=h.get("id", f"h{i+1}"),
+                    statement=h.get("statement", h.get("hypothesis", "")),
+                    rationale=h.get("rationale", h.get("reason", "")),
+                ))
+            
+            # Parse steps
+            for i, s in enumerate(data.get("steps", [])):
+                steps.append(AnalysisStep(
+                    id=s.get("id", f"s{i+1}"),
+                    hypothesis_id=s.get("hypothesis_id", ""),
+                    description=s.get("description", ""),
+                    action_type=s.get("action_type", s.get("actionType", "query")),
+                    requirements=s.get("requirements", {}),
+                    depends_on=s.get("depends_on", []),
+                    step_number=s.get("step_number", s.get("stepNumber", i + 1)),
+                    details=s.get("details", {}),
+                    dependencies=s.get("dependencies", []),
+                ))
+                
+        except (json.JSONDecodeError, KeyError):
+            # Fall back to text parsing
+            hypotheses, steps = self._parse_text_response(response_content)
+        
+        # Ensure at least one hypothesis and step
+        if not hypotheses:
+            hypotheses = [Hypothesis(
+                id="h1",
+                statement="Phân tích dữ liệu để tìm nguyên nhân",
+                rationale="Cần kiểm tra dữ liệu trước khi đưa ra kết luận",
+            )]
+        
+        if not steps:
+            steps = [AnalysisStep(
+                id="s1",
+                hypothesis_id="h1",
+                description="Truy vấn dữ liệu tổng quan",
+                action_type="query",
+            )]
+        
         return AnalysisPlan(
             question=input_data.question,
-            hypotheses=[
-                Hypothesis(
-                    id="h1",
-                    statement="Placeholder hypothesis",
-                    rationale="To be parsed from LLM response",
-                )
-            ],
-            steps=[
-                AnalysisStep(
-                    step_number=1,
-                    description="Placeholder step",
-                    action_type="sql",
-                )
-            ],
+            hypotheses=hypotheses,
+            steps=steps,
             context_used=input_data.enriched_context,
             version=version,
         )
+    
+    def _parse_text_response(
+        self,
+        response_content: str,
+    ) -> tuple[list[Hypothesis], list[AnalysisStep]]:
+        """Parse hypotheses and steps from unstructured text."""
+        import re
+        
+        hypotheses = []
+        steps = []
+        
+        lines = response_content.split("\n")
+        current_section = None
+        step_counter = 0
+        hypothesis_counter = 0
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Detect section headers
+            if any(kw in line.lower() for kw in ["hypothes", "giả thuyết", "giả thiết"]):
+                current_section = "hypothesis"
+                continue
+            elif any(kw in line.lower() for kw in ["step", "bước", "plan", "kế hoạch"]):
+                current_section = "step"
+                continue
+            
+            # Parse hypotheses
+            if current_section == "hypothesis":
+                # Match numbered items like "1.", "H1:", "- ", etc.
+                match = re.match(r'^(?:H?\d+[\.\):]?\s*|-\s*|•\s*)(.+)$', line, re.IGNORECASE)
+                if match:
+                    hypothesis_counter += 1
+                    hypotheses.append(Hypothesis(
+                        id=f"h{hypothesis_counter}",
+                        statement=match.group(1).strip(),
+                        rationale="Extracted from plan",
+                    ))
+            
+            # Parse steps
+            elif current_section == "step":
+                match = re.match(r'^(?:\d+[\.\):]?\s*|-\s*|•\s*)(.+)$', line)
+                if match:
+                    step_counter += 1
+                    desc = match.group(1).strip()
+                    
+                    # Detect action type
+                    action_type = "query"
+                    if any(kw in desc.lower() for kw in ["python", "pandas", "code"]):
+                        action_type = "analysis"
+                    elif any(kw in desc.lower() for kw in ["chart", "graph", "visual", "biểu đồ"]):
+                        action_type = "visualization"
+                    
+                    steps.append(AnalysisStep(
+                        id=f"s{step_counter}",
+                        hypothesis_id=f"h{hypothesis_counter}" if hypothesis_counter > 0 else "h1",
+                        description=desc,
+                        action_type=action_type,
+                    ))
+        
+        return hypotheses, steps
+
