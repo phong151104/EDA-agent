@@ -141,13 +141,13 @@ guardrails:
       - modified_by
 
 sample_questions:
-  - "Danh sách các location đang ACTIVE là gì?"
+  - "Danh sách các location đang active là gì?"
   - "Có bao nhiêu địa điểm/chi nhánh theo từng thành phố?"
   - "Các promotion_location_code hiện có và city_name tương ứng?"
   - "Những location nào có đầy đủ toạ độ (latitude/longitude)?"
 
 sample_queries:
-  - description: "Danh sách location đang ACTIVE theo thành phố"
+  - description: "Danh sách location đang active theo thành phố"
     sql: |
       SELECT
         city_name,
@@ -156,7 +156,7 @@ sample_queries:
         latitude,
         longitude
       FROM lakehouse.lh_vnfilm_v2.locations
-      WHERE status = 'ACTIVE'
+      WHERE status = 'active'
       ORDER BY city_name, promotion_location_code
       LIMIT 200
 

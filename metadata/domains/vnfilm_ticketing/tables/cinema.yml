@@ -200,7 +200,7 @@ sample_questions:
   - "Tên tiếng Việt và tiếng Anh của rạp có mã X?"
 
 sample_queries:
-  - description: "Danh sách rạp ACTIVE theo từng vendor"
+  - description: "Danh sách rạp active theo từng vendor"
     sql: |
       SELECT
         vendor_id,
@@ -208,7 +208,7 @@ sample_queries:
         name_vi,
         status
       FROM lakehouse.lh_vnfilm_v2.cinema
-      WHERE status = 'ACTIVE'
+      WHERE status = 'active'
       ORDER BY vendor_id, name_vi
   - description: "Thống kê số rạp theo vendor"
     sql: |

@@ -175,19 +175,3 @@ sample_queries:
         ON s.campaign_id = l.campaign_id
        AND s.created_at = l.max_created_at
       ORDER BY s.campaign_id;
-
-  - description: "Stage rơi nhiều nhất (conversion drop) cho mỗi campaign"
-    sql: |
-      SELECT
-        campaign_id,
-        created_at,
-        1 AS worst_stage,
-        conversion_rate_stage_1 AS worst_stage_rate
-      FROM lakehouse.cdp_mart.cdp_camp_conversion_stage
-      QUALIFY conversion_rate_stage_1 = LEAST(
-        conversion_rate_stage_1,
-        conversion_rate_stage_2,
-        conversion_rate_stage_3,
-        conversion_rate_stage_4,
-        conversion_rate_stage_5
-      );

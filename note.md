@@ -4,7 +4,7 @@ MATCH (n) DETACH DELETE n
 # Query to find all tables and their relationships in the graph database
 MATCH p = (t:Table)-[:HAS_COLUMN|JOIN|FK*1..2]-(x)
 RETURN p
-LIMIT 1000;
+LIMIT 5000;
 
 # Command to build the graph database
 python scripts\build_neo4j_graph.py --domain vnfilm_ticketing --metadata-root metadata\domains
@@ -21,3 +21,8 @@ python scripts/test/test_planner_integration.py "Tại sao doanh thu giảm?"
 # Command to test session and subgraph
 python scripts/test/test_session_subgraph.py
 
+# Command to test planner-critic loop
+python scripts/test/test_planner_critic_loop.py "Tại sao doanh thu giảm?"
+
+# Command to test text to sql
+python scripts/test/test_text_to_sql.py

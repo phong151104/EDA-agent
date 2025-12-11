@@ -212,13 +212,6 @@ sample_questions:
   - "Số lượng email theo từng receiver_hash?"
 
 sample_queries:
-  - description: "Đếm email gửi thất bại trong 24h qua"
-    sql: |
-      SELECT COUNT(*) AS failed_emails
-      FROM lakehouse.lh_vnfilm_v2.notify_email
-      WHERE status = 'FAIL'
-        AND created_date >= now() - interval '1 day'
-
   - description: "Thống kê số email theo loại"
     sql: |
       SELECT
@@ -228,7 +221,7 @@ sample_queries:
       GROUP BY type
       ORDER BY total_emails DESC
 
-  - description: "Danh sách email gửi cho một đơn hàng"
+  - description: "Danh sách email gửi cho đơn hàng 1"
     sql: |
       SELECT
         id,
@@ -237,6 +230,6 @@ sample_queries:
         status,
         created_date
       FROM lakehouse.lh_vnfilm_v2.notify_email
-      WHERE order_id = :order_id
+      WHERE order_id = 1
       ORDER BY created_date DESC
       LIMIT 200

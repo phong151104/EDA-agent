@@ -213,5 +213,6 @@ sample_queries:
         campaign_start_at_gmt_7,
         campaign_end_at_gmt_7
       FROM lakehouse.cdp_mart.dim_campaign
-      WHERE campaign_start_at_gmt_7 >= date_trunc('month', current_date) - interval '1 month'
+      WHERE campaign_start_at_gmt_7 >= date_add('month', -1, date_trunc('month', current_date))
       ORDER BY campaign_start_at_gmt_7;
+
