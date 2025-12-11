@@ -321,6 +321,121 @@ class SchemaRetriever:
         
         return columns
     
+    def _find_join_paths(
+        self,
+        table_names: List[str],
+        domain: str,
+        max_depth: int = 4,
+    ) -> Dict[str, Any]:
+        """
+        Find optimal join paths between tables using Neo4j shortestPath.
+        
+        This ensures we get the correct joins to connect all required tables,
+        including any intermediate tables needed for multi-hop joins.
+        
+        Args:
+            table_names: List of table names to connect
+            domain: Domain to search in
+            max_depth: Maximum path depth (default 4 hops)
+            
+        Returns:
+            Dict with:
+            - joins: List of join dicts on the optimal paths
+            - intermediate_tables: Set of table names needed for multi-hop joins
+        """
+        if len(table_names) < 2:
+            return {"joins": [], "intermediate_tables": set()}
+        
+        all_joins = []
+        intermediate_tables = set()
+        seen_join_keys = set()  # Avoid duplicate joins
+        
+        # Use first table as anchor
+        anchor_table = table_names[0]
+        other_tables = table_names[1:]
+        
+        logger.info(f"[PATH] Finding join paths from anchor '{anchor_table}' to {other_tables}")
+        
+        for target_table in other_tables:
+            # Find shortest path between anchor and target
+            path_query = """
+            MATCH path = shortestPath(
+                (t1:Table {table_name: $anchor})-[:JOIN|FK*1..""" + str(max_depth) + """]-(t2:Table {table_name: $target})
+            )
+            WHERE t1.domain = $domain AND t2.domain = $domain
+            WITH path, relationships(path) AS rels, nodes(path) AS nodes
+            UNWIND range(0, size(rels)-1) AS idx
+            WITH nodes[idx] AS from_node, nodes[idx+1] AS to_node, rels[idx] AS rel
+            RETURN 
+                from_node.table_name AS from_table,
+                to_node.table_name AS to_table,
+                type(rel) AS rel_type,
+                rel.join_type AS join_type,
+                rel.on AS on_clause,
+                rel.column AS fk_column,
+                rel.references_column AS fk_ref_column,
+                rel.description AS description
+            """
+            
+            try:
+                results = self.execute_query(path_query, {
+                    "anchor": anchor_table,
+                    "target": target_table,
+                    "domain": domain,
+                })
+                
+                if not results:
+                    logger.warning(f"[PATH] No path found: {anchor_table} → {target_table}")
+                    continue
+                
+                logger.info(f"[PATH] ✅ Found path {anchor_table} → {target_table} with {len(results)} hops")
+                
+                for r in results:
+                    from_t = r["from_table"]
+                    to_t = r["to_table"]
+                    
+                    # Create unique key for deduplication (order-independent)
+                    join_key = tuple(sorted([from_t, to_t]))
+                    if join_key in seen_join_keys:
+                        continue
+                    seen_join_keys.add(join_key)
+                    
+                    # Track intermediate tables
+                    if from_t not in table_names:
+                        intermediate_tables.add(from_t)
+                    if to_t not in table_names:
+                        intermediate_tables.add(to_t)
+                    
+                    # Build join dict
+                    if r["rel_type"] == "JOIN":
+                        all_joins.append({
+                            "from_table": from_t,
+                            "to_table": to_t,
+                            "join_type": r.get("join_type") or "left",
+                            "on_clause": r.get("on_clause") or [],
+                            "description": r.get("description") or "",
+                        })
+                    else:  # FK relationship
+                        fk_col = r.get("fk_column", "")
+                        ref_col = r.get("fk_ref_column", "")
+                        if fk_col and ref_col:
+                            all_joins.append({
+                                "from_table": from_t,
+                                "to_table": to_t,
+                                "join_type": "left",
+                                "on_clause": [f"{from_t}.{fk_col} = {to_t}.{ref_col}"],
+                                "description": "",
+                            })
+                            
+            except Exception as e:
+                logger.warning(f"[PATH] Path search failed {anchor_table} → {target_table}: {e}")
+        
+        if intermediate_tables:
+            logger.info(f"[PATH] Intermediate tables discovered: {intermediate_tables}")
+        
+        logger.info(f"[PATH] Total joins on paths: {len(all_joins)}")
+        return {"joins": all_joins, "intermediate_tables": intermediate_tables}
+    
     def _keyword_search(
         self,
         keywords: List[str],
@@ -374,13 +489,25 @@ class SchemaRetriever:
         relevant_columns: Set[tuple],
         domain: str,
     ) -> Dict[str, Any]:
-        """Expand context using graph traversal."""
+        """Expand context using graph traversal with Entity-guided path search."""
         if not table_names:
             return {"tables": [], "columns": [], "joins": [], "metrics": []}
         
         table_names_list = list(table_names)
         
-        # Get tables
+        # === STEP 1: Use path search to find optimal joins ===
+        path_result = self._find_join_paths(table_names_list, domain, max_depth=depth + 2)
+        joins = path_result["joins"]
+        intermediate_tables = path_result["intermediate_tables"]
+        
+        # Expand table list with intermediate tables (needed for multi-hop joins)
+        all_table_names = set(table_names_list) | intermediate_tables
+        all_table_names_list = list(all_table_names)
+        
+        if intermediate_tables:
+            logger.info(f"[EXPAND] Added intermediate tables: {intermediate_tables}")
+        
+        # === STEP 2: Get table metadata ===
         tables_query = """
         MATCH (t:Table)
         WHERE t.table_name IN $table_names
@@ -391,9 +518,9 @@ class SchemaRetriever:
                t.grain AS grain,
                t.tags AS tags
         """
-        tables = self.execute_query(tables_query, {"table_names": table_names_list})
+        tables = self.execute_query(tables_query, {"table_names": all_table_names_list})
         
-        # Get key columns (PK, time)
+        # === STEP 3: Get key columns (PK, time) ===
         key_columns_query = """
         MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
         WHERE t.table_name IN $table_names
@@ -408,9 +535,9 @@ class SchemaRetriever:
                r.time_column AS is_time_column
         ORDER BY t.table_name, c.column_name
         """
-        key_columns = self.execute_query(key_columns_query, {"table_names": table_names_list})
+        key_columns = self.execute_query(key_columns_query, {"table_names": all_table_names_list})
         
-        # Get vector-matched columns
+        # === STEP 4: Get vector-matched columns ===
         vector_columns = []
         if relevant_columns:
             all_columns_query = """
@@ -425,7 +552,7 @@ class SchemaRetriever:
                    r.primary_key AS is_primary_key,
                    r.time_column AS is_time_column
             """
-            all_cols = self.execute_query(all_columns_query, {"table_names": table_names_list})
+            all_cols = self.execute_query(all_columns_query, {"table_names": all_table_names_list})
             for col in all_cols:
                 if (col['table_name'], col['column_name']) in relevant_columns:
                     vector_columns.append(col)
@@ -442,39 +569,41 @@ class SchemaRetriever:
         
         columns = sorted(columns_dict.values(), key=lambda x: (x['table_name'], x['column_name']))
         
-        # Get joins
-        joins_query = """
-        MATCH (t1:Table)-[j:JOIN]->(t2:Table)
-        WHERE t1.table_name IN $table_names OR t2.table_name IN $table_names
-        RETURN t1.table_name AS from_table,
-               t2.table_name AS to_table,
-               j.join_type AS join_type,
-               j.on AS on_clause,
-               j.description AS description
-        """
-        joins = self.execute_query(joins_query, {"table_names": table_names_list})
+        # === STEP 5: Fallback - if no paths found, use legacy join fetch ===
+        if not joins and len(table_names_list) > 1:
+            logger.warning("[EXPAND] No paths found, falling back to legacy join fetch")
+            joins_query = """
+            MATCH (t1:Table)-[j:JOIN]->(t2:Table)
+            WHERE t1.table_name IN $table_names OR t2.table_name IN $table_names
+            RETURN t1.table_name AS from_table,
+                   t2.table_name AS to_table,
+                   j.join_type AS join_type,
+                   j.on AS on_clause,
+                   j.description AS description
+            """
+            joins = self.execute_query(joins_query, {"table_names": table_names_list})
+            
+            # Also get FK relationships
+            fk_query = """
+            MATCH (t1:Table)-[fk:FK]->(t2:Table)
+            WHERE t1.table_name IN $table_names OR t2.table_name IN $table_names
+            RETURN t1.table_name AS from_table,
+                   t2.table_name AS to_table,
+                   fk.column AS column,
+                   fk.references_column AS references_column
+            """
+            fks = self.execute_query(fk_query, {"table_names": table_names_list})
+            
+            for fk in fks:
+                joins.append({
+                    "from_table": fk["from_table"],
+                    "to_table": fk["to_table"],
+                    "join_type": "left",
+                    "on_clause": [f"{fk['from_table']}.{fk['column']} = {fk['to_table']}.{fk['references_column']}"],
+                    "description": "",
+                })
         
-        # Get FK relationships
-        fk_query = """
-        MATCH (t1:Table)-[fk:FK]->(t2:Table)
-        WHERE t1.table_name IN $table_names OR t2.table_name IN $table_names
-        RETURN t1.table_name AS from_table,
-               t2.table_name AS to_table,
-               fk.column AS column,
-               fk.references_column AS references_column
-        """
-        fks = self.execute_query(fk_query, {"table_names": table_names_list})
-        
-        for fk in fks:
-            joins.append({
-                "from_table": fk["from_table"],
-                "to_table": fk["to_table"],
-                "join_type": "left",
-                "on_clause": [f"{fk['from_table']}.{fk['column']} = {fk['to_table']}.{fk['references_column']}"],
-                "description": "",
-            })
-        
-        # Get metrics
+        # === STEP 6: Get metrics ===
         metrics_query = """
         MATCH (m:Metric)
         WHERE m.base_table IN $table_names
@@ -485,7 +614,7 @@ class SchemaRetriever:
                m.base_table AS base_table,
                m.unit AS unit
         """
-        metrics = self.execute_query(metrics_query, {"table_names": table_names_list})
+        metrics = self.execute_query(metrics_query, {"table_names": all_table_names_list})
         
         return {
             "tables": tables,

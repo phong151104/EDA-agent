@@ -153,8 +153,14 @@ OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
         Returns:
             TextToSQLResult with clean SQL string
         """
+        logger.info("=" * 60)
+        logger.info("[TEXT2SQL] 🚀 Starting SQL generation")
+        logger.info(f"[TEXT2SQL] Prompt: {prompt}")
+        logger.info("=" * 60)
+        
         try:
             # Step 1: Get SubGraph
+            logger.info("[STEP 1] 📊 Getting SubGraph (schema context)...")
             session_id_out, sub_graph = await self._get_subgraph(
                 prompt=prompt,
                 session_id=session_id,
@@ -162,22 +168,47 @@ OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
             )
             
             if not sub_graph or not sub_graph.tables:
+                logger.error("[STEP 1] ❌ No relevant tables found!")
                 return TextToSQLResult(
                     success=False,
                     sql="",
                     error="No relevant tables found for this query",
                 )
             
+            # Log SubGraph summary
+            table_names = sub_graph.get_table_names()
+            join_count = len(sub_graph.joins)
+            column_count = len(sub_graph.columns)
+            logger.info(f"[STEP 1] ✅ SubGraph retrieved:")
+            logger.info(f"         - Tables: {table_names}")
+            logger.info(f"         - Columns: {column_count}")
+            logger.info(f"         - Joins: {join_count}")
+            
+            # Log joins detail
+            if sub_graph.joins:
+                logger.info("[STEP 1] 🔗 Joins found:")
+                for j in sub_graph.joins:
+                    on_clause = j.on_clause[0] if j.on_clause else "N/A"
+                    logger.info(f"         - {j.from_table} → {j.to_table}: {on_clause}")
+            
             # Step 2: Generate SQL (with samples)
+            logger.info("[STEP 2] 🤖 Generating SQL with LLM...")
             sql = await self._generate_sql(prompt, sub_graph)
             
             if not sql:
+                logger.error("[STEP 2] ❌ Failed to generate valid SQL")
                 return TextToSQLResult(
                     success=False,
                     sql="",
                     session_id=session_id_out,
                     error="Failed to generate valid SQL",
                 )
+            
+            logger.info("[STEP 2] ✅ SQL generated successfully")
+            logger.info("=" * 60)
+            logger.info("[TEXT2SQL] 🎉 COMPLETE!")
+            logger.info(f"[TEXT2SQL] SQL:\n{sql}")
+            logger.info("=" * 60)
             
             return TextToSQLResult(
                 success=True,
@@ -187,7 +218,7 @@ OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
             )
             
         except Exception as e:
-            logger.exception("Text-to-SQL error")
+            logger.exception("[TEXT2SQL] ❌ Error occurred")
             return TextToSQLResult(success=False, sql="", error=str(e))
     
     # =========================================================================
@@ -204,19 +235,22 @@ OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
         
         # Priority 1: Direct SubGraph
         if sub_graph:
+            logger.info("[SUBGRAPH] Using provided SubGraph directly")
             return "", sub_graph
         
         # Priority 2: From cached session
         if session_id:
+            logger.info(f"[SUBGRAPH] Looking for cached session: {session_id}")
             session = get_cached_session(session_id)
             if session and session.sub_graph:
-                logger.debug(f"Reusing session: {session_id}")
+                logger.info(f"[SUBGRAPH] ✅ Reusing cached session")
                 return session_id, session.sub_graph
-            logger.warning(f"Session not found: {session_id}")
+            logger.warning(f"[SUBGRAPH] ⚠️ Session not found: {session_id}")
         
         # Priority 3: Build new session (queries Neo4j, auto-caches)
-        logger.info(f"Building new session for: {prompt[:50]}...")
+        logger.info(f"[SUBGRAPH] Building new session (Neo4j query)...")
         session = await build_session(prompt)
+        logger.info(f"[SUBGRAPH] ✅ New session created: {session.session_id}")
         return session.session_id, session.sub_graph
     
     def _load_table_metadata(self, table_name: str, domain: str = "vnfilm_ticketing") -> dict | None:
@@ -343,10 +377,14 @@ SQL:"""
     
     def _parse_sql(self, content: str) -> str:
         """Parse and validate SQL from LLM response."""
+        logger.info("[SQL_PARSE] Parsing LLM response...")
+        
         try:
             result = json.loads(content)
             sql = result.get("sql", "").strip()
+            logger.debug(f"[SQL_PARSE] Extracted SQL from JSON: {sql[:100]}...")
         except json.JSONDecodeError:
+            logger.warning("[SQL_PARSE] JSON parse failed, trying regex extraction")
             # Fallback: extract SQL from text
             sql_match = re.search(r"```sql\s*(.*?)\s*```", content, re.DOTALL)
             if sql_match:
@@ -354,17 +392,86 @@ SQL:"""
             else:
                 sql = content.strip()
         
-        # Basic validation
-        sql_upper = sql.upper()
-        if not sql_upper.startswith("SELECT"):
-            logger.warning(f"Invalid SQL (not SELECT): {sql[:50]}")
+        # Validate SQL
+        is_valid, error_msg = self._validate_sql(sql)
+        if not is_valid:
+            logger.error(f"[SQL_VALIDATE] ❌ Validation failed: {error_msg}")
             return ""
         
         # Ensure semicolon
         if not sql.endswith(";"):
             sql += ";"
         
+        logger.info(f"[SQL_PARSE] ✅ Valid SQL generated ({len(sql)} chars)")
         return sql
+    
+    def _validate_sql(self, sql: str) -> tuple[bool, str]:
+        """
+        Validate SQL for security and Trino syntax compliance.
+        
+        Returns:
+            (is_valid, error_message)
+        """
+        if not sql:
+            return False, "Empty SQL"
+        
+        sql_upper = sql.upper().strip()
+        
+        # === SECURITY CHECKS ===
+        # Forbidden operations
+        forbidden_patterns = [
+            (r'\bDELETE\b', "DELETE statements are forbidden"),
+            (r'\bDROP\b', "DROP statements are forbidden"),
+            (r'\bTRUNCATE\b', "TRUNCATE statements are forbidden"),
+            (r'\bUPDATE\b', "UPDATE statements are forbidden"),
+            (r'\bINSERT\b', "INSERT statements are forbidden"),
+            (r'\bALTER\b', "ALTER statements are forbidden"),
+            (r'\bCREATE\b', "CREATE statements are forbidden"),
+            (r'\bGRANT\b', "GRANT statements are forbidden"),
+            (r'\bREVOKE\b', "REVOKE statements are forbidden"),
+            (r'\bEXEC\b', "EXEC statements are forbidden"),
+            (r'\bEXECUTE\b', "EXECUTE statements are forbidden"),
+            (r'--', "SQL comments (--) are forbidden"),
+            (r'/\*', "SQL block comments are forbidden"),
+            (r'\bINTO\s+OUTFILE\b', "INTO OUTFILE is forbidden"),
+            (r'\bLOAD\s+DATA\b', "LOAD DATA is forbidden"),
+        ]
+        
+        for pattern, error_msg in forbidden_patterns:
+            if re.search(pattern, sql_upper):
+                return False, error_msg
+        
+        # Must start with SELECT
+        if not sql_upper.startswith("SELECT"):
+            return False, f"Query must start with SELECT, got: {sql_upper[:20]}..."
+        
+        # === TRINO SYNTAX CHECKS ===
+        # Check for common Trino syntax issues
+        
+        # 1. Check for proper table name format (catalog.schema.table)
+        # Allow both full names and aliases
+        
+        # 2. Check balanced parentheses
+        open_parens = sql.count('(')
+        close_parens = sql.count(')')
+        if open_parens != close_parens:
+            return False, f"Unbalanced parentheses: {open_parens} open, {close_parens} close"
+        
+        # 3. Check for unclosed quotes
+        single_quotes = sql.count("'")
+        if single_quotes % 2 != 0:
+            return False, "Unclosed single quote detected"
+        
+        # 4. Check for LIMIT (recommended for safety)
+        if 'LIMIT' not in sql_upper:
+            logger.warning("[SQL_VALIDATE] ⚠️ No LIMIT clause - consider adding for safety")
+        
+        # 5. Check for SELECT * (discouraged)
+        if re.search(r'\bSELECT\s+\*', sql_upper):
+            logger.warning("[SQL_VALIDATE] ⚠️ SELECT * detected - consider specifying columns")
+        
+        logger.info("[SQL_VALIDATE] ✅ SQL passed all validation checks")
+        return True, ""
 
 
 # =============================================================================

@@ -5,6 +5,7 @@ Run: python scripts/test/test_text_to_sql.py
 """
 
 import asyncio
+import logging
 import re
 import sys
 from pathlib import Path
@@ -12,6 +13,17 @@ from pathlib import Path
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Configure verbose logging to see the full flow
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%H:%M:%S",
+)
+
+# Enable DEBUG for specific modules if needed
+# logging.getLogger("src.context_fusion").setLevel(logging.DEBUG)
+# logging.getLogger("src.mcp.tools.text_to_sql").setLevel(logging.DEBUG)
 
 
 def format_sql(sql: str) -> str:
