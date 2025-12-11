@@ -47,6 +47,7 @@ class MCPServer:
             "validate_sql_syntax": self.validate_sql_syntax,
             "get_table_schema": self.get_table_schema,
             "create_visualization": self.create_visualization,
+            "text_to_sql": self.text_to_sql,
         }
     
     async def execute_sql(
@@ -177,6 +178,36 @@ class MCPServer:
             output={"image_path": None, "image_base64": None},
         )
     
+    async def text_to_sql(
+        self,
+        prompt: str,
+        session_id: str | None = None,
+    ) -> ToolResult:
+        """
+        Generate Trino SQL from natural language.
+        
+        Args:
+            prompt: Natural language query (any text)
+            session_id: Optional - reuse existing session's SubGraph
+            
+        Returns:
+            ToolResult with SQL string
+        """
+        from src.mcp.tools.text_to_sql import TextToSQL
+        
+        tool = TextToSQL()
+        result = await tool.generate(prompt=prompt, session_id=session_id)
+        
+        return ToolResult(
+            success=result.success,
+            output={
+                "sql": result.sql,
+                "session_id": result.session_id,
+                "tables_used": result.tables_used,
+            },
+            error=result.error,
+        )
+    
     def list_tools(self) -> list[dict[str, Any]]:
         """
         List available tools (MCP tools/list).
@@ -244,6 +275,18 @@ class MCPServer:
                         "options": {"type": "object"},
                     },
                     "required": ["data", "chart_type"],
+                },
+            },
+            {
+                "name": "text_to_sql",
+                "description": "Generate Trino SQL from natural language. Uses Graph RAG to find relevant schema.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {"type": "string", "description": "Natural language query"},
+                        "session_id": {"type": "string", "description": "Optional: reuse existing session"},
+                    },
+                    "required": ["prompt"],
                 },
             },
         ]
