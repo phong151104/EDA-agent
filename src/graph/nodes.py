@@ -106,10 +106,10 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
         previous_plan = AnalysisPlan(
             question=plan_dict.get("question", state["user_question"]),
             hypotheses=[
-                Hypothesis(**h) for h in plan_dict.get("hypotheses", [])
+                Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])
             ],
             steps=[
-                AnalysisStep(**s) for s in plan_dict.get("steps", [])
+                AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])
             ],
             version=plan_dict.get("version", 1),
         )
@@ -152,11 +152,20 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
 
 async def critic_node(state: EDAState) -> dict[str, Any]:
     """
-    Critic Agent node.
+    Critic Agent node with 3-layer verification.
     
-    Validates the current plan against metadata and business rules.
+    Layer 1: Data Availability (Neo4j query)
+    Layer 2: Logical Consistency (Rules-based)
+    Layer 3: Business Logic (Optional LLM)
     """
-    logger.info("Validating plan...")
+    from src.validation import PlanVerifier
+    
+    iteration = state.get("debate_iteration", 0) + 1
+    max_iterations = state.get("max_debate_iterations", 3)
+    
+    logger.info(f"[Critic] ═══════════════════════════════════════════════")
+    logger.info(f"[Critic] PLAN VERIFICATION (Iteration {iteration}/{max_iterations})")
+    logger.info(f"[Critic] ═══════════════════════════════════════════════")
     
     if not state.get("current_plan"):
         return {
@@ -164,42 +173,72 @@ async def critic_node(state: EDAState) -> dict[str, Any]:
             "current_phase": WorkflowPhase.ERROR.value,
         }
     
-    # Initialize critic
-    critic = CriticAgent()
-    
-    # Reconstruct plan
     plan_dict = state["current_plan"]
-    plan = AnalysisPlan(
-        question=plan_dict.get("question", ""),
-        hypotheses=[Hypothesis(**h) for h in plan_dict.get("hypotheses", [])],
-        steps=[AnalysisStep(**s) for s in plan_dict.get("steps", [])],
-        version=plan_dict.get("version", 1),
+    
+    # Log plan summary
+    hypotheses = plan_dict.get("hypotheses", [])
+    steps = plan_dict.get("steps", [])
+    logger.info(f"[Critic] Plan has {len(hypotheses)} hypotheses, {len(steps)} steps")
+    
+    # =========================================================================
+    # Run 3-Layer Verification
+    # =========================================================================
+    
+    verifier = PlanVerifier(domain="vnfilm_ticketing")
+    
+    # Only run Layer 3 (LLM) if we've been iterating for a while
+    run_layer3 = iteration >= 2
+    
+    result = await verifier.verify(plan_dict, run_layer3=run_layer3)
+    
+    # =========================================================================
+    # Make Decision
+    # =========================================================================
+    
+    plan_approved = result.passed
+    
+    # Force approve if max iterations reached and no critical errors
+    has_critical_errors = any(
+        i.severity == "error" for i in result.issues
     )
     
-    critic_input = CriticInput(
-        plan=plan,
-        metadata_context=state.get("schema_context", {}),
-        feasibility_check=None,  # TODO: Get from Code Agent dry-run
-    )
+    if iteration >= max_iterations and not has_critical_errors:
+        logger.warning(f"[Critic] Max iterations ({max_iterations}) reached, forcing approval")
+        plan_approved = True
     
-    # Validate
-    output = await critic.process(critic_input)
+    # Format feedback for Planner
+    feedback = ""
+    if not plan_approved:
+        feedback = verifier.format_issues(result.issues)
     
-    # Determine next phase
-    debate_iteration = state.get("debate_iteration", 0) + 1
-    plan_approved = output.status.value == "approved"
+    logger.info(f"[Critic] Final Decision: {'✅ APPROVED' if plan_approved else '❌ REJECTED'}")
+    
+    # Calculate approval score based on issues
+    total_issues = len(result.issues)
+    errors = sum(1 for i in result.issues if i.severity == "error")
+    warnings = sum(1 for i in result.issues if i.severity == "warning")
+    
+    # Score: 1.0 if no issues, decreases with issues
+    approval_score = max(0.0, 1.0 - (errors * 0.3) - (warnings * 0.1))
     
     return {
         "validation_result": {
-            "status": output.status.value,
-            "approval_score": output.approval_score,
-            "issues": [i.to_dict() for i in output.issues],
+            "status": "approved" if plan_approved else "rejected",
+            "approval_score": approval_score,
+            "layer1_passed": result.layer1_passed,
+            "layer2_passed": result.layer2_passed,
+            "layer3_passed": result.layer3_passed,
+            "issues": [i.to_dict() for i in result.issues],
+            "total_errors": errors,
+            "total_warnings": warnings,
         },
-        "critic_feedback": output.feedback if not plan_approved else None,
-        "debate_iteration": debate_iteration,
+        "critic_feedback": feedback if not plan_approved else None,
+        "debate_iteration": iteration,
         "plan_approved": plan_approved,
-        "messages": [AIMessage(content=f"[Critic] Score: {output.approval_score:.2f}")],
+        "current_phase": WorkflowPhase.EXECUTION.value if plan_approved else WorkflowPhase.PLANNING.value,
+        "messages": [AIMessage(content=f"[Critic] {'Approved' if plan_approved else 'Rejected'} (L1:{'✅' if result.layer1_passed else '❌'} L2:{'✅' if result.layer2_passed else '❌'} L3:{'✅' if result.layer3_passed else '⏭️'})")],
     }
+
 
 
 async def code_agent_node(state: EDAState) -> dict[str, Any]:
@@ -223,8 +262,8 @@ async def code_agent_node(state: EDAState) -> dict[str, Any]:
     plan_dict = state["current_plan"]
     plan = AnalysisPlan(
         question=plan_dict.get("question", ""),
-        hypotheses=[Hypothesis(**h) for h in plan_dict.get("hypotheses", [])],
-        steps=[AnalysisStep(**s) for s in plan_dict.get("steps", [])],
+        hypotheses=[Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])],
+        steps=[AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])],
         version=plan_dict.get("version", 1),
     )
     
@@ -289,8 +328,8 @@ async def analyst_node(state: EDAState) -> dict[str, Any]:
     plan_dict = state["current_plan"]
     plan = AnalysisPlan(
         question=plan_dict.get("question", ""),
-        hypotheses=[Hypothesis(**h) for h in plan_dict.get("hypotheses", [])],
-        steps=[AnalysisStep(**s) for s in plan_dict.get("steps", [])],
+        hypotheses=[Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])],
+        steps=[AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])],
         version=plan_dict.get("version", 1),
     )
     
