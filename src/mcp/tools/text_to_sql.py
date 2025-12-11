@@ -85,17 +85,31 @@ class TextToSQL:
         GROUP BY v.vendor_name;
     """
     
-    # Compact system prompt - optimized for tokens
-    SYSTEM_PROMPT = """You are a Trino SQL expert.
-Generate a valid SELECT query using ONLY the provided schema.
-Learn from the example queries provided.
+    # System prompt with strict SubGraph-only rules
+    SYSTEM_PROMPT = """You are a Trino SQL expert. Generate SQL using ONLY the provided schema.
 
-TRINO RULES:
-- Use FULL table names with catalog.schema.table format
-- DATE functions: date_trunc('month', col), current_date
-- Aggregates: SUM, COUNT, AVG, MIN, MAX
-- Use table aliases
-- End with semicolon
+=== ⚠️ MANDATORY - DO NOT VIOLATE ===
+• DO NOT invent table names - use ONLY tables from "## Available Tables"
+• DO NOT invent column names - use ONLY columns from "## Columns"
+• DO NOT invent JOIN conditions - use ONLY joins from "## Joins"
+• If a join doesn't exist in "## Joins", those tables CANNOT be joined
+
+=== DOMAIN KNOWLEDGE ===
+• "khách hàng" identifier = orders.bank_identity_hash
+• "giao dịch thành công" = orders with status='payment'
+• To get vendor info: orders → order_film → vendor (via order_film.vendor_id)
+• order_film has cinema info in columns (cinema_id, cinema_name_vi) - no need to join cinema table
+• orders.status: 'initial', 'payment', 'expired'
+
+=== RULES ===
+1. JOINS: Use ONLY from "## Joins". Check the ON clause carefully.
+2. DATA TYPES: Don't compare VARCHAR with BIGINT (e.g., vendor_cinema_id is VARCHAR)
+3. TABLE NAMES: lakehouse.lh_vnfilm_v2.<table_name>
+4. Use DISTINCT when counting unique customers
+5. VENDOR NAME: use name_vi (NOT name)
+
+=== TRINO DATE ===
+- Q1 2025: created_date >= DATE '2025-01-01' AND created_date < DATE '2025-04-01'
 
 OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
 
@@ -240,57 +254,58 @@ OUTPUT: Return ONLY valid JSON: {"sql": "SELECT ...;"}"""
         domain: str = "vnfilm_ticketing",
     ) -> str:
         """
-        Load and select most relevant sample queries from YAML metadata.
+        Load ALL sample queries from ALL relevant tables.
         
         Returns formatted few-shot examples for the prompt.
         """
         all_samples = []
         
+        logger.info(f"Loading samples for tables: {table_names}")
+        logger.info(f"METADATA_DIR: {METADATA_DIR}")
+        
         for table_name in table_names:
             metadata = self._load_table_metadata(table_name, domain)
             if not metadata:
+                logger.debug(f"No metadata for table: {table_name}")
                 continue
             
             # Get sample_queries
             sample_queries = metadata.get("sample_queries", [])
-            sample_questions = metadata.get("sample_questions", [])
+            logger.info(f"Table {table_name}: found {len(sample_queries)} sample_queries")
             
             for sq in sample_queries:
                 if isinstance(sq, dict):
                     desc = sq.get("description", "")
                     sql = sq.get("sql", "")
                     if sql:
-                        score = self._score_sample(prompt, desc, sql)
                         all_samples.append({
                             "question": desc,
                             "sql": sql.strip(),
-                            "score": score,
                             "table": table_name,
                         })
+        
+        logger.info(f"Total samples loaded: {len(all_samples)}")
         
         if not all_samples:
             return ""
         
-        # Sort by score and take top N
-        all_samples.sort(key=lambda x: x["score"], reverse=True)
-        top_samples = all_samples[:self.max_samples]
-        
-        # Format as few-shot examples (compact)
+        # Format ALL samples as few-shot examples
         lines = ["Examples:"]
-        for i, sample in enumerate(top_samples, 1):
+        for i, sample in enumerate(all_samples, 1):
             lines.append(f"Q{i}: {sample['question']}")
-            # Compact SQL - single line if short
+            # Keep SQL readable but compact
             sql = sample["sql"].replace("\n", " ").strip()
-            sql = re.sub(r'\s+', ' ', sql)  # Collapse whitespace
+            sql = re.sub(r'\s+', ' ', sql)
             lines.append(f"A{i}: {sql}")
         
         return "\n".join(lines)
     
     async def _generate_sql(self, prompt: str, sub_graph: SubGraph) -> str:
-        """Generate SQL using LLM with compact prompt + few-shot samples."""
+        """Generate SQL using LLM with detailed schema + few-shot samples."""
         
-        # Build compact schema context
-        schema_context = sub_graph.to_prompt_context(compact=True)
+        # Build DETAILED schema context (includes all columns per table)
+        # This is critical - LLM needs to see which columns belong to which table
+        schema_context = sub_graph.to_prompt_context(compact=False)
         
         # Load relevant samples from YAML (token-efficient)
         table_names = sub_graph.get_table_names()
