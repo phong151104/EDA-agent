@@ -1,5 +1,5 @@
 """
-Text-to-SQL Test Script.
+Text-to-SQL Verbose Test Script.
 
 Shows detailed step-by-step visualization of the entire pipeline:
 1. Query Analysis (intent, keywords, entities)
@@ -7,56 +7,7 @@ Shows detailed step-by-step visualization of the entire pipeline:
 3. Smart Column Selection (with savings metrics)
 4. SQL Generation
 
-=============================================================================
-USAGE
-=============================================================================
-
-Interactive mode:
-    python scripts/test/test_text_to_sql.py
-
-Demo mode with sample prompts:
-    python scripts/test/test_text_to_sql.py --demo
-
-Single prompt:
-    python scripts/test/test_text_to_sql.py --prompt "Doanh thu theo vendor Q1 2025"
-
-=============================================================================
-FIRST-TIME SETUP
-=============================================================================
-
-Before running this test, you need to create fulltext indexes in Neo4j:
-
-    python scripts/setup/create_fulltext_indexes.py
-
-Or in Python:
-    
-    from src.context_fusion import Neo4jVectorIndex
-    index = Neo4jVectorIndex()
-    index.create_fulltext_index()
-    index.close()
-
-=============================================================================
-TEST PROMPTS (by complexity)
-=============================================================================
-
-Level 1 - Simple (1 table):
-    - Tổng số đơn hàng trong tháng 12 năm 2025
-    - Doanh thu theo ngày trong tuần này
-
-Level 2 - Medium (2-3 tables, JOIN):
-    - Doanh thu theo vendor Q1 2025
-    - Số lượng vé bán ra theo rạp chiếu trong tháng 11
-    - Top 10 phim có doanh thu cao nhất năm 2025
-
-Level 3 - Complex (many tables, aggregation):
-    - So sánh doanh thu giữa CGV và Lotte từ tháng 1 đến tháng 6 năm 2025
-    - Top 5 khách hàng có tổng giá trị đơn hàng cao nhất
-
-Level 4 - Advanced (multi-hop join):
-    - Vendor nào có tỷ lệ đơn hàng thành công cao nhất trong Q4 2025
-    - So sánh doanh thu tháng 11 với tháng 12 theo từng vendor    
-
-=============================================================================
+Run: python scripts/test/test_text_to_sql_verbose.py
 """
 
 import asyncio
@@ -72,13 +23,13 @@ from typing import List, Dict, Any
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Configure logging
+# Configure logging to see internal steps
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
 )
 
-# Suppress verbose logs from other modules
+# Suppress verbose logs from other modules during test
 logging.getLogger("neo4j").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -94,26 +45,15 @@ class StepTiming:
 
 def format_sql(sql: str) -> str:
     """Format SQL for readability."""
-    if not sql:
-        return ""
-    
-    # Keywords to add newlines before (except SELECT which should stay at start)
-    keywords = ['FROM', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
+    keywords = ['SELECT', 'FROM', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN',
                 'WHERE', 'AND', 'OR', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'ON']
     
     formatted = sql.strip()
-    
     for kw in keywords:
-        # Add newline + indent before keyword
-        formatted = re.sub(rf'\b({kw})\b', rf'\n  \1', formatted, flags=re.IGNORECASE)
+        formatted = re.sub(rf'(?<!^)\b({kw})\b', rf'\n  \1', formatted, flags=re.IGNORECASE)
     
-    # Clean up multiple newlines
     formatted = re.sub(r'\n+', '\n', formatted)
-    
-    # Ensure it starts with SELECT (no leading newline)
-    formatted = formatted.strip()
-    
-    return formatted
+    return formatted.strip()
 
 
 def print_header(text: str, char: str = "="):
@@ -130,9 +70,9 @@ def print_step(step_num: int, title: str, icon: str = "🔷"):
     print("-" * 50)
 
 
-async def run_test(prompt: str):
+async def run_verbose_test(prompt: str):
     """Run text-to-sql with detailed step-by-step output."""
-    from src.context_fusion import ContextBuilder, QueryRewriter, SchemaRetriever
+    from src.context_fusion import ContextBuilder, QueryRewriter
     from src.mcp.tools import TextToSQL
     
     timings: List[StepTiming] = []
@@ -158,13 +98,15 @@ async def run_test(prompt: str):
     print(f"  ⏱️  {duration:.0f}ms")
     
     # =========================================================================
-    # STEP 2: Hybrid Search
+    # STEP 2: Hybrid Search (Vector + Fulltext + Keyword)
     # =========================================================================
     print_step(2, "Hybrid Search (Vector + Fulltext + Keyword)", "🔎")
     
     start = time.perf_counter()
+    from src.context_fusion import SchemaRetriever
     retriever = SchemaRetriever()
     
+    # Perform the retrieval (this does all 3 searches)
     sub_graph = await retriever.retrieve(
         analyzed_query=analyzed,
         domain="vnfilm_ticketing",
@@ -192,8 +134,9 @@ async def run_test(prompt: str):
     # =========================================================================
     print_step(3, "Smart Column Selection", "📊")
     
-    total_cols = len(sub_graph.columns)
+    total_cols = sum(1 for c in sub_graph.columns)
     
+    # Group columns by table for display
     cols_by_table: Dict[str, List[str]] = {}
     for c in sub_graph.columns:
         if c.table_name not in cols_by_table:
@@ -216,7 +159,10 @@ async def run_test(prompt: str):
         if len(cols) > 6:
             print(f"      ... and {len(cols) - 6} more")
     
-    print(f"\n  📉 Token Optimization: Only PK/FK/Time + relevant columns")
+    # Show column statistics
+    print(f"\n  📉 Token Optimization:")
+    print(f"     Selected columns shown above")
+    print(f"     (Only PK/FK/Time + semantically relevant columns)")
     
     # =========================================================================
     # STEP 4: SQL Generation
@@ -264,7 +210,7 @@ async def run_test(prompt: str):
 
 async def interactive_mode():
     """Run in interactive mode."""
-    print_header("TEXT-TO-SQL TEST")
+    print_header("TEXT-TO-SQL VERBOSE TEST")
     print("  Commands:")
     print("    'quit' or 'q' - Exit")
     print("    Enter any prompt to test")
@@ -281,7 +227,7 @@ async def interactive_mode():
                 print("👋 Goodbye!")
                 break
             
-            await run_test(prompt)
+            await run_verbose_test(prompt)
             
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
@@ -296,7 +242,8 @@ async def demo_mode():
     """Run with demo prompts."""
     demo_prompts = [
         "Doanh thu theo vendor Q1 2025",
-        "Top 10 phim có doanh thu cao nhất năm 2025",
+        # "Số lượng đơn hàng thành công theo rạp chiếu tháng này",
+        # "Top 10 khách hàng có doanh thu cao nhất",
     ]
     
     print_header("TEXT-TO-SQL DEMO MODE")
@@ -306,7 +253,7 @@ async def demo_mode():
         print(f"  DEMO {i}/{len(demo_prompts)}")
         print(f"{'=' * 70}")
         
-        await run_test(prompt)
+        await run_verbose_test(prompt)
         
         if i < len(demo_prompts):
             print("\n" + "─" * 70)
@@ -316,7 +263,7 @@ async def demo_mode():
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Text-to-SQL Test")
+    parser = argparse.ArgumentParser(description="Text-to-SQL Verbose Test")
     parser.add_argument("--demo", action="store_true", help="Run demo with sample prompts")
     parser.add_argument("--prompt", type=str, help="Run with specific prompt")
     args = parser.parse_args()
@@ -324,6 +271,6 @@ if __name__ == "__main__":
     if args.demo:
         asyncio.run(demo_mode())
     elif args.prompt:
-        asyncio.run(run_test(args.prompt))
+        asyncio.run(run_verbose_test(args.prompt))
     else:
         asyncio.run(interactive_mode())

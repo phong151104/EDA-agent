@@ -81,29 +81,40 @@ class MCPServer:
     async def execute_python(
         self,
         code: str,
-        timeout_seconds: int = 30,
+        data: dict[str, Any] | None = None,
+        timeout_seconds: int = 60,
     ) -> ToolResult:
         """
-        Execute Python code in sandbox.
+        Execute Python code using OpenAI Code Interpreter.
         
         Args:
             code: Python code to execute
+            data: Optional data to pass (e.g., DataFrame from SQL result)
             timeout_seconds: Execution timeout
             
         Returns:
-            ToolResult with execution output
+            ToolResult with execution output, images, files
         """
-        logger.info(f"Executing Python code ({len(code)} chars)")
+        from src.mcp.tools.code_interpreter import CodeInterpreter
         
-        # TODO: Implement via E2B sandbox
-        # 1. Create sandbox
-        # 2. Execute code
-        # 3. Capture output + any generated files
+        logger.info(f"[MCP] Executing Python code ({len(code)} chars)")
+        
+        interpreter = CodeInterpreter()
+        result = await interpreter.execute(
+            code=code, 
+            data=data, 
+            timeout_seconds=timeout_seconds
+        )
         
         return ToolResult(
-            success=True,
-            output={"stdout": "", "stderr": "", "files": []},
-            execution_time_ms=100,
+            success=result.success,
+            output={
+                "stdout": result.output,
+                "images": result.images,
+                "files": result.files,
+            },
+            error=result.error,
+            execution_time_ms=result.execution_time_ms,
         )
     
     async def validate_sql_syntax(

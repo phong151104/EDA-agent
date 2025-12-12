@@ -436,6 +436,70 @@ class Neo4jGraphBuilder:
                 logger.warning(f"Constraint creation note: {e}")
 
         logger.info("Constraints created/verified")
+        
+        # Create fulltext indexes for hybrid search
+        self._create_fulltext_indexes(session)
+    
+    def _create_fulltext_indexes(self, session: Any) -> None:
+        """
+        Create fulltext indexes for hybrid search.
+        
+        Fulltext indexes enable:
+        - Fuzzy matching (typo tolerance)
+        - Multi-field search (table_name + business_name + description)
+        - Fast keyword search without regex
+        
+        How it works:
+        1. Neo4j creates an inverted index from text fields
+        2. When querying, it tokenizes the search term and finds matches
+        3. Supports wildcards (*) and fuzzy search (~)
+        
+        Example query:
+            CALL db.index.fulltext.queryNodes('schema_fulltext_search_table', 'order* OR revenue~')
+            YIELD node, score
+            RETURN node.table_name, score
+        """
+        logger.info("Creating fulltext indexes for hybrid search...")
+        
+        fulltext_indexes = [
+            # Fulltext index for Table nodes
+            # Searches: table_name, business_name, description
+            """
+            CREATE FULLTEXT INDEX schema_fulltext_search_table IF NOT EXISTS
+            FOR (t:Table)
+            ON EACH [t.table_name, t.business_name, t.description]
+            """,
+            
+            # Fulltext index for Column nodes
+            # Searches: column_name, business_name, description
+            """
+            CREATE FULLTEXT INDEX schema_fulltext_search_column IF NOT EXISTS
+            FOR (c:Column)
+            ON EACH [c.column_name, c.business_name, c.description]
+            """,
+            
+            # Fulltext index for Concept nodes
+            # Searches: name (synonyms are in a separate property)
+            """
+            CREATE FULLTEXT INDEX schema_fulltext_search_concept IF NOT EXISTS
+            FOR (c:Concept)
+            ON EACH [c.name]
+            """,
+        ]
+        
+        for index_query in fulltext_indexes:
+            try:
+                session.run(index_query)
+                # Extract index name for logging
+                index_name = index_query.split("INDEX ")[1].split(" IF")[0].strip()
+                logger.info(f"  ✅ Created fulltext index: {index_name}")
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    logger.info(f"  ⏭️ Fulltext index already exists")
+                else:
+                    logger.warning(f"  ⚠️ Fulltext index creation note: {e}")
+        
+        logger.info("Fulltext indexes created/verified")
 
     def _create_table_nodes(self, session: Any, metadata: DomainMetadata) -> None:
         """Create Table nodes."""
