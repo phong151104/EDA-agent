@@ -208,12 +208,23 @@ JSON: {"sql": "SELECT ...;"}"""
             if not sql and result.get("error"):
                 logger.warning(f"[LLM] Error from LLM: {result.get('error')}")
                 return ""
+            
+            # Check if LLM indicated missing data
+            if not sql and result.get("message"):
+                logger.warning(f"[LLM] Message: {result.get('message')}")
+                return ""
                 
         except json.JSONDecodeError:
+            logger.warning(f"[LLM] Failed to parse JSON, trying regex extraction")
             sql_match = re.search(r"```sql\s*(.*?)\s*```", content, re.DOTALL)
             sql = sql_match.group(1).strip() if sql_match else content.strip()
         
+        if not sql:
+            logger.warning("[LLM] Empty SQL returned from LLM")
+            return ""
+        
         if not self._validate_sql(sql):
+            logger.warning(f"[LLM] SQL validation failed: {sql[:200]}")
             return ""
         
         return sql if sql.endswith(";") else sql + ";"
@@ -225,20 +236,24 @@ JSON: {"sql": "SELECT ...;"}"""
         
         sql_upper = sql.upper().strip()
         
-        # Must be SELECT only
-        if not sql_upper.startswith("SELECT"):
+        # Must be SELECT or WITH (CTE) only
+        if not sql_upper.startswith("SELECT") and not sql_upper.startswith("WITH"):
+            logger.warning(f"[SQL] SQL must start with SELECT or WITH, got: {sql[:30]}")
             return False
         
         # Forbidden operations
         forbidden = ["DELETE", "DROP", "TRUNCATE", "UPDATE", "INSERT", "ALTER", "CREATE", "GRANT", "EXEC"]
         for word in forbidden:
             if re.search(rf'\b{word}\b', sql_upper):
+                logger.warning(f"[SQL] Forbidden keyword found: {word}")
                 return False
         
         # Check balanced parentheses and quotes
         if sql.count('(') != sql.count(')'):
+            logger.warning("[SQL] Unbalanced parentheses")
             return False
         if sql.count("'") % 2 != 0:
+            logger.warning("[SQL] Unbalanced quotes")
             return False
         
         return True

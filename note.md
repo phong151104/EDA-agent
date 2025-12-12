@@ -6,8 +6,11 @@ MATCH p = (t:Table)-[:HAS_COLUMN|JOIN|FK*1..2]-(x)
 RETURN p
 LIMIT 5000;
 
+# Command to show indexes
+SHOW INDEXES YIELD name, type WHERE name CONTAINS 'concept'
+
 # Command to build the graph database
-python scripts\build_neo4j_graph.py --domain vnfilm_ticketing --metadata-root metadata\domains
+python scripts/build_neo4j_graph.py --domain vnfilm_ticketing
 
 # Command to index embeddings
 python scripts/index_embeddings.py

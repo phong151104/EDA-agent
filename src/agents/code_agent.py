@@ -219,7 +219,10 @@ import pandas as pd
     
     async def process(self, input_data: CodeAgentInput) -> CodeAgentOutput:
         """
-        Generate and execute code for the analysis plan.
+        Generate code for the analysis plan using MCP tools.
+        
+        For SQL steps: Uses MCP text_to_sql tool
+        For Python steps: Generates visualization code based on SQL results
         
         Args:
             input_data: Code agent input with plan and context
@@ -227,7 +230,12 @@ import pandas as pd
         Returns:
             Generated code and execution results
         """
+        from src.mcp.server import MCPServer
+        
         logger.info(f"[CodeAgent] Processing plan with {len(input_data.plan.steps)} steps")
+        
+        # Initialize MCP Server
+        mcp = MCPServer()
         
         # Determine which steps to process
         if input_data.step_to_execute:
@@ -235,22 +243,66 @@ import pandas as pd
         else:
             steps = input_data.plan.steps
         
-        # Build prompt with schema context
-        prompt = self._build_prompt(input_data, steps)
+        generated_code: List[GeneratedCode] = []
+        execution_results: Dict[str, ExecutionResult] = {}
         
-        # Call LLM
-        logger.info("[CodeAgent] Generating code...")
-        response = await self.invoke_llm([HumanMessage(content=prompt)])
-        
-        # Parse generated code
-        generated_code = self._parse_code_response(response.content, steps)
+        for step in steps:
+            step_id = step.id if hasattr(step, 'id') else f"s{step.step_number}"
+            hypo_id = step.hypothesis_id if hasattr(step, 'hypothesis_id') else ""
+            action_type = step.action_type.lower()
+            
+            logger.info(f"[CodeAgent] Processing step {step_id} ({action_type})")
+            
+            if action_type in ["query", "sql", "aggregation"]:
+                # Use MCP text_to_sql tool
+                code, result = await self._generate_sql_via_mcp(
+                    mcp=mcp,
+                    step=step,
+                    step_id=step_id,
+                    hypo_id=hypo_id,
+                    question=input_data.plan.question,
+                )
+                generated_code.append(code)
+                execution_results[step_id] = result
+                
+            elif action_type in ["visualization", "chart", "plot"]:
+                # Generate and execute Python visualization code
+                code, result = await self._generate_visualization_code(
+                    mcp=mcp,
+                    step=step,
+                    step_id=step_id,
+                    hypo_id=hypo_id,
+                    previous_results=execution_results,
+                )
+                generated_code.append(code)
+                execution_results[step_id] = result
+                
+            elif action_type in ["analysis", "calculation", "comparison"]:
+                # Generate and execute Python analysis code
+                code, result = await self._generate_analysis_code(
+                    mcp=mcp,
+                    step=step,
+                    step_id=step_id,
+                    hypo_id=hypo_id,
+                    previous_results=execution_results,
+                )
+                generated_code.append(code)
+                execution_results[step_id] = result
+                
+            else:
+                # Fallback: use LLM to generate code
+                code, result = await self._generate_code_with_llm(
+                    step=step,
+                    step_id=step_id,
+                    hypo_id=hypo_id,
+                    input_data=input_data,
+                )
+                generated_code.append(code)
+                execution_results[step_id] = result
         
         logger.info(f"[CodeAgent] Generated {len(generated_code)} code blocks")
         for code in generated_code:
             logger.info(f"  - {code.step_id}: [{code.language}] {code.description[:50]}...")
-        
-        # Execute code (placeholder - actual execution via MCP)
-        execution_results = await self._execute_code(generated_code)
         
         all_success = all(
             r.status == ExecutionStatus.SUCCESS
@@ -261,6 +313,327 @@ import pandas as pd
             generated_code=generated_code,
             execution_results=execution_results,
             all_success=all_success,
+        )
+    
+    async def _generate_sql_via_mcp(
+        self,
+        mcp,
+        step: AnalysisStep,
+        step_id: str,
+        hypo_id: str,
+        question: str,
+    ) -> tuple[GeneratedCode, ExecutionResult]:
+        """Generate SQL using MCP text_to_sql tool."""
+        
+        # Build natural language prompt from step requirements
+        reqs = step.requirements if hasattr(step, 'requirements') else step.details or {}
+        
+        data_needed = reqs.get("data_needed", [])
+        filters = reqs.get("filters", [])
+        grouping = reqs.get("grouping", [])
+        tables_hint = reqs.get("tables_hint", [])
+        
+        # Combine into natural language prompt
+        prompt_parts = [step.description]
+        
+        if data_needed:
+            prompt_parts.append(f"Cần lấy: {', '.join(data_needed)}")
+        if filters:
+            prompt_parts.append(f"Lọc theo: {', '.join(filters)}")
+        if grouping:
+            prompt_parts.append(f"Nhóm theo: {', '.join(grouping)}")
+        if tables_hint:
+            prompt_parts.append(f"Từ bảng: {', '.join(tables_hint)}")
+        
+        nl_prompt = ". ".join(prompt_parts)
+        
+        logger.info(f"[CodeAgent] Calling text_to_sql: {nl_prompt[:80]}...")
+        
+        # Call MCP text_to_sql tool
+        result = await mcp.call_tool("text_to_sql", {"prompt": nl_prompt})
+        
+        if result.success:
+            sql = result.output.get("sql", "")
+            tables_used = result.output.get("tables_used", [])
+            
+            logger.info(f"[CodeAgent] ✅ SQL generated ({len(sql)} chars)")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="sql",
+                    code=sql,
+                    description=step.description,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.SUCCESS,
+                    output_type=OutputType.TEXT,
+                    output={"sql": sql, "tables_used": tables_used},
+                    execution_time_ms=result.execution_time_ms,
+                ),
+            )
+        else:
+            logger.error(f"[CodeAgent] ❌ text_to_sql failed: {result.error}")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="sql",
+                    code=f"-- Error: {result.error}",
+                    description=step.description,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    output_type=OutputType.ERROR,
+                    output=None,
+                    error_message=result.error,
+                ),
+            )
+    
+    async def _generate_visualization_code(
+        self,
+        mcp,  # MCPServer instance
+        step: AnalysisStep,
+        step_id: str,
+        hypo_id: str,
+        previous_results: Dict[str, ExecutionResult],
+    ) -> tuple[GeneratedCode, ExecutionResult]:
+        """Generate and execute Python visualization code."""
+        
+        # Find dependent SQL step
+        deps = step.depends_on if hasattr(step, 'depends_on') else step.dependencies or []
+        data_var = "df"
+        
+        # Get SQL result from previous step if available
+        sql_data = None
+        if deps:
+            dep_result = previous_results.get(deps[0])
+            if dep_result and dep_result.output:
+                sql_data = dep_result.output.get("sql_data")
+            data_var = f"df_{deps[0]}"
+        
+        # Generate visualization code
+        code = f'''# Visualization for: {step.description}
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Data from previous SQL query
+{data_var} = pd.DataFrame(data) if 'data' in dir() else pd.DataFrame()
+
+plt.figure(figsize=(12, 6))
+plt.title("{step.description}")
+
+# Auto-detect chart type based on data
+if len({data_var}.columns) >= 2:
+    x_col = {data_var}.columns[0]
+    y_col = {data_var}.columns[1]
+    
+    # If x is categorical or few unique values, use bar chart
+    if {data_var}[x_col].dtype == 'object' or {data_var}[x_col].nunique() < 15:
+        plt.bar(range(len({data_var})), {data_var}[y_col])
+        plt.xticks(range(len({data_var})), {data_var}[x_col], rotation=45, ha='right')
+    else:
+        plt.plot({data_var}[x_col], {data_var}[y_col], marker='o')
+    
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+
+plt.tight_layout()
+plt.savefig("{step_id}_chart.png")
+print("Chart saved to {step_id}_chart.png")
+'''
+        
+        # Execute code via MCP
+        mcp_result = await mcp.call_tool("execute_python", {
+            "code": code,
+            "data": sql_data,
+        })
+        
+        if mcp_result.success:
+            logger.info(f"[CodeAgent] ✅ Visualization executed ({mcp_result.execution_time_ms}ms)")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="python",
+                    code=code,
+                    description=step.description,
+                    dependencies=deps,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.SUCCESS,
+                    output_type=OutputType.IMAGE,
+                    output={
+                        "stdout": mcp_result.output.get("stdout", ""),
+                        "images": mcp_result.output.get("images", []),
+                    },
+                    execution_time_ms=mcp_result.execution_time_ms,
+                ),
+            )
+        else:
+            logger.error(f"[CodeAgent] ❌ Visualization failed: {mcp_result.error}")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="python",
+                    code=code,
+                    description=step.description,
+                    dependencies=deps,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    output_type=OutputType.ERROR,
+                    error_message=mcp_result.error,
+                ),
+            )
+    
+    async def _generate_analysis_code(
+        self,
+        mcp,  # MCPServer instance
+        step: AnalysisStep,
+        step_id: str,
+        hypo_id: str,
+        previous_results: Dict[str, ExecutionResult],
+    ) -> tuple[GeneratedCode, ExecutionResult]:
+        """Generate and execute Python analysis code."""
+        
+        deps = step.depends_on if hasattr(step, 'depends_on') else step.dependencies or []
+        
+        # Get SQL result from previous step if available
+        sql_data = None
+        if deps:
+            dep_result = previous_results.get(deps[0])
+            if dep_result and dep_result.output:
+                sql_data = dep_result.output.get("sql_data")
+        
+        code = f'''# Analysis for: {step.description}
+import pandas as pd
+import numpy as np
+
+# Data from previous SQL query
+df = pd.DataFrame(data) if 'data' in dir() else pd.DataFrame()
+
+# Perform analysis
+print("="*50)
+print("Analysis: {step.description}")
+print("="*50)
+
+if not df.empty:
+    print(f"\\nData shape: {{df.shape}}")
+    print(f"\\nColumns: {{list(df.columns)}}")
+    print(f"\\nSummary statistics:")
+    print(df.describe())
+    
+    # Basic insights
+    for col in df.select_dtypes(include=[np.number]).columns:
+        print(f"\\n{{col}}:")
+        print(f"  Mean: {{df[col].mean():.2f}}")
+        print(f"  Max: {{df[col].max():.2f}}")
+        print(f"  Min: {{df[col].min():.2f}}")
+else:
+    print("No data available for analysis")
+
+result = {{
+    "description": "{step.description}",
+    "status": "completed"
+}}
+print(f"\\nResult: {{result}}")
+'''
+        
+        # Execute code via MCP
+        mcp_result = await mcp.call_tool("execute_python", {
+            "code": code,
+            "data": sql_data,
+        })
+        
+        if mcp_result.success:
+            logger.info(f"[CodeAgent] ✅ Analysis executed ({mcp_result.execution_time_ms}ms)")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="python",
+                    code=code,
+                    description=step.description,
+                    dependencies=deps,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.SUCCESS,
+                    output_type=OutputType.JSON,
+                    output={
+                        "stdout": mcp_result.output.get("stdout", ""),
+                    },
+                    execution_time_ms=mcp_result.execution_time_ms,
+                ),
+            )
+        else:
+            logger.error(f"[CodeAgent] ❌ Analysis failed: {mcp_result.error}")
+            
+            return (
+                GeneratedCode(
+                    step_id=step_id,
+                    hypothesis_id=hypo_id,
+                    language="python",
+                    code=code,
+                    description=step.description,
+                    dependencies=deps,
+                ),
+                ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    output_type=OutputType.ERROR,
+                    error_message=mcp_result.error,
+                ),
+            )
+    
+    async def _generate_code_with_llm(
+        self,
+        step: AnalysisStep,
+        step_id: str,
+        hypo_id: str,
+        input_data: CodeAgentInput,
+    ) -> tuple[GeneratedCode, ExecutionResult]:
+        """Fallback: Generate code with LLM."""
+        
+        prompt = f"""Generate code for this step:
+        
+Step: {step.description}
+Action Type: {step.action_type}
+Requirements: {step.requirements if hasattr(step, 'requirements') else step.details}
+
+Output the code in a markdown code block.
+"""
+        
+        response = await self.invoke_llm([HumanMessage(content=prompt)])
+        
+        # Parse code from response
+        code_match = re.search(r'```(\w+)\n(.*?)```', response.content, re.DOTALL)
+        if code_match:
+            language = code_match.group(1).lower()
+            code = code_match.group(2).strip()
+        else:
+            language = "python"
+            code = response.content.strip()
+        
+        return (
+            GeneratedCode(
+                step_id=step_id,
+                hypothesis_id=hypo_id,
+                language=language,
+                code=code,
+                description=step.description,
+            ),
+            ExecutionResult(
+                status=ExecutionStatus.SUCCESS,
+                output_type=OutputType.TEXT,
+                output={"code_generated": True},
+            ),
         )
     
     def _build_prompt(
