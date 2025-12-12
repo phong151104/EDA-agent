@@ -26,6 +26,9 @@ class Neo4jVectorIndex:
     # Node labels to index
     INDEXED_LABELS = ["Table", "Column", "Concept", "Metric"]
     
+    # Fulltext index configuration
+    FULLTEXT_INDEX_NAME = "schema_fulltext_search"
+    
     def __init__(
         self,
         uri: str | None = None,
@@ -108,6 +111,119 @@ class Neo4jVectorIndex:
         query = f"DROP INDEX {index_name} IF EXISTS"
         self.execute_write(query)
         logger.info(f"Dropped vector index: {index_name}")
+    
+    # =========================================================================
+    # Fulltext Index (for keyword search with fuzzy matching)
+    # =========================================================================
+    
+    def create_fulltext_index(self) -> None:
+        """
+        Create fulltext index for text-based search.
+        
+        This enables fuzzy matching and is faster than CONTAINS queries.
+        """
+        # Note: Neo4j fulltext index syntax requires creating one index per label combination
+        # We create a single index covering the most important searchable fields
+        queries = [
+            # Index for Table nodes
+            f"""
+            CREATE FULLTEXT INDEX {self.FULLTEXT_INDEX_NAME}_table IF NOT EXISTS
+            FOR (n:Table)
+            ON EACH [n.table_name, n.business_name, n.description]
+            """,
+            # Index for Column nodes  
+            f"""
+            CREATE FULLTEXT INDEX {self.FULLTEXT_INDEX_NAME}_column IF NOT EXISTS
+            FOR (n:Column)
+            ON EACH [n.column_name, n.business_name, n.description]
+            """,
+            # Index for Concept nodes
+            f"""
+            CREATE FULLTEXT INDEX {self.FULLTEXT_INDEX_NAME}_concept IF NOT EXISTS
+            FOR (n:Concept)
+            ON EACH [n.name, n.synonyms]
+            """,
+        ]
+        
+        for query in queries:
+            try:
+                self.execute_write(query)
+                logger.info(f"Created fulltext index")
+            except Exception as e:
+                logger.warning(f"Fulltext index creation note: {e}")
+    
+    def fulltext_search(
+        self,
+        search_terms: List[str],
+        label: str | None = None,
+        top_k: int = 20,
+        fuzzy: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform fulltext search with optional fuzzy matching.
+        
+        Args:
+            search_terms: List of terms to search for
+            label: Restrict search to specific label (Table, Column, Concept)
+            top_k: Maximum results to return
+            fuzzy: Enable fuzzy matching (~)
+            
+        Returns:
+            List of matching nodes with scores
+        """
+        if not search_terms:
+            return []
+        
+        # Build search string with OR and optional fuzzy
+        if fuzzy:
+            # Fuzzy search: "term~" allows 1-2 character edits
+            search_text = " OR ".join([f"{term}~" for term in search_terms])
+        else:
+            search_text = " OR ".join(search_terms)
+        
+        # Determine which index to use
+        if label:
+            index_name = f"{self.FULLTEXT_INDEX_NAME}_{label.lower()}"
+        else:
+            # Search all indexes and combine
+            return self._fulltext_search_all(search_terms, top_k, fuzzy)
+        
+        query = """
+        CALL db.index.fulltext.queryNodes($index_name, $search_text)
+        YIELD node, score
+        RETURN labels(node)[0] AS label, 
+               properties(node) AS props, 
+               score
+        ORDER BY score DESC
+        LIMIT $top_k
+        """
+        
+        try:
+            return self.execute_query(query, {
+                "index_name": index_name,
+                "search_text": search_text,
+                "top_k": top_k,
+            })
+        except Exception as e:
+            logger.warning(f"Fulltext search failed for {label}: {e}")
+            return []
+    
+    def _fulltext_search_all(
+        self,
+        search_terms: List[str],
+        top_k: int,
+        fuzzy: bool,
+    ) -> List[Dict[str, Any]]:
+        """Search all fulltext indexes and combine results."""
+        all_results = []
+        
+        for label in ["table", "column", "concept"]:
+            results = self.fulltext_search(search_terms, label=label, top_k=top_k, fuzzy=fuzzy)
+            all_results.extend(results)
+        
+        # Sort by score and limit
+        all_results.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return all_results[:top_k]
     
     def generate_and_store_embeddings(
         self,
