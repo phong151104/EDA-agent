@@ -1,0 +1,6 @@
+id,display_order,status,created_date,modified_date,modified_by,promotion_location_code,city_name,latitude,longitude,created_by,created_by_hash
+1,1,active,2025-04-09 17:33:29.000000,2025-11-24 17:33:29.000000,system,HN,Hà Nội,21.0285,105.8542,system,bbc5e661e106c6dcd8dc6dd186454c2f
+2,2,active,2025-04-27 17:33:29.000000,2025-11-12 17:33:29.000000,system,HCM,Hồ Chí Minh,10.8231,106.6297,system,bbc5e661e106c6dcd8dc6dd186454c2f
+3,3,active,2025-02-13 17:33:29.000000,2025-11-19 17:33:29.000000,system,DN,Đà Nẵng,16.0544,108.2022,system,bbc5e661e106c6dcd8dc6dd186454c2f
+4,4,active,2025-03-06 17:33:29.000000,2025-12-09 17:33:29.000000,system,HP,Hải Phòng,20.8449,106.6881,system,bbc5e661e106c6dcd8dc6dd186454c2f
+5,5,active,2025-02-02 17:33:29.000000,2025-11-15 17:33:29.000000,system,CT,Cần Thơ,10.0452,105.7469,system,bbc5e661e106c6dcd8dc6dd186454c2f

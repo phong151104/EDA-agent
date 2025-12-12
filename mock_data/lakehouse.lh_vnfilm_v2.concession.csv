@@ -1,0 +1,7 @@
+id,vendor_concession_id,name_vi,name_en,image,description_vi,description_en,price,vendor_id,cinema_id,vendor_cinema_id,status,created_date,created_by,modified_date,modified_by
+1,CON001,Combo Couple,Couple Combo,https://img.vnpay.vn/con1.jpg,1 Bắp Lớn + 2 Nước Lớn,1 Bắp Lớn + 2 Nước Lớn,89000,1,7,VND-C007,active,2025-07-18 17:33:29.000000,system,2025-11-18 17:33:29.000000,system
+2,CON002,Combo Solo,Solo Combo,https://img.vnpay.vn/con2.jpg,1 Bắp Vừa + 1 Nước Vừa,1 Bắp Vừa + 1 Nước Vừa,59000,2,8,VND-C008,active,2025-08-28 17:33:29.000000,system,2025-11-28 17:33:29.000000,system
+3,CON003,Bắp Rang Bơ Lớn,Large Popcorn,https://img.vnpay.vn/con3.jpg,Bắp rang bơ size lớn,Bắp rang bơ size lớn,45000,5,6,VND-C006,active,2025-10-14 17:33:29.000000,system,2025-11-16 17:33:29.000000,system
+4,CON004,Coca Cola Lớn,Large Coca Cola,https://img.vnpay.vn/con4.jpg,Coca Cola size lớn,Coca Cola size lớn,35000,4,7,VND-C007,active,2025-07-05 17:33:29.000000,system,2025-11-14 17:33:29.000000,system
+5,CON005,Combo Family,Family Combo,https://img.vnpay.vn/con5.jpg,2 Bắp Lớn + 4 Nước,2 Bắp Lớn + 4 Nước,139000,3,8,VND-C008,active,2025-10-14 17:33:29.000000,system,2025-12-12 17:33:29.000000,system
+6,CON006,Nachos Phô Mai,Cheese Nachos,https://img.vnpay.vn/con6.jpg,Nachos với phô mai,Nachos với phô mai,55000,2,8,VND-C008,active,2025-07-15 17:33:29.000000,system,2025-11-24 17:33:29.000000,system

@@ -63,9 +63,9 @@ scratch/
 tmp/
 
 # Data files (large)
-*.csv
-*.parquet
-data/
+# *.csv
+# *.parquet
+# data/
 
 # Neo4j data
 neo4j_data/

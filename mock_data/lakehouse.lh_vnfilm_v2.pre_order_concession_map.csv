@@ -1,0 +1,21 @@
+id,id_value,bank_id,vendor_id,vendor_name,vendor_description,vendor_image,vendor_data,vendor_price,vnpay_price,campaign_id,sub_campaign_id,campaign_code,campaign_type,campaign_vendor_discount,bank_identity,bank_identity_hash,created_date,created_by,created_by_hash
+MAP00001,1,8,CON001,Combo,Mô tả,https://img/1.jpg,{},89000,89000,,,,normal,0,user1,0a041b9462caa4a31bac3567e0b6e6fd,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00002,2,1,CON002,Combo,Mô tả,https://img/2.jpg,{},89000,89000,,,,normal,0,user2,6025d18fe48abd45168528f18a82e265,2025-12-12 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00003,3,8,CON003,Combo,Mô tả,https://img/3.jpg,{},89000,89000,,,,normal,0,user3,5860faf02b6bc6222ba5aca523560f0e,2025-12-12 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00004,4,6,CON004,Combo,Mô tả,https://img/4.jpg,{},89000,89000,,,,normal,0,user4,5269ef980de47819ba3d14340f466526,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00005,5,1,CON005,Combo,Mô tả,https://img/5.jpg,{},89000,89000,,,,normal,0,user5,5a39bead318f306939acb1d016647be2,2025-12-11 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00006,6,5,CON006,Combo,Mô tả,https://img/6.jpg,{},89000,89000,,,,normal,0,user6,ecb48a1cc94f951252ec462fe9ecc55c,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00007,7,1,CON007,Combo,Mô tả,https://img/7.jpg,{},89000,89000,,,,normal,0,user7,3268151e52d97b4cacf97f5b46a5c76c,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00008,8,7,CON008,Combo,Mô tả,https://img/8.jpg,{},89000,89000,,,,normal,0,user8,f60afa4989a7db13314a2ab988137263,2025-12-05 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00009,9,4,CON009,Combo,Mô tả,https://img/9.jpg,{},89000,89000,,,,normal,0,user9,0fb8d3c5dfaf81a387bf0ba439ab40e6,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00010,10,3,CON010,Combo,Mô tả,https://img/10.jpg,{},89000,89000,,,,normal,0,user10,5bbf1a9e0de062225a1bb7df8d8b3719,2025-12-11 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00011,11,1,CON011,Combo,Mô tả,https://img/11.jpg,{},89000,89000,,,,normal,0,user11,81115e31e22a5801b197750ec12d7a51,2025-12-09 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00012,12,8,CON012,Combo,Mô tả,https://img/12.jpg,{},89000,89000,,,,normal,0,user12,bd35283fe8fcfd77d7c05a8bf2adb85c,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00013,13,1,CON013,Combo,Mô tả,https://img/13.jpg,{},89000,89000,,,,normal,0,user13,1834e148b518a43a37e04a4e4fbcee1e,2025-12-07 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00014,14,3,CON014,Combo,Mô tả,https://img/14.jpg,{},89000,89000,,,,normal,0,user14,daf7996f88742675acb3d0f85a8069d0,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00015,15,2,CON015,Combo,Mô tả,https://img/15.jpg,{},89000,89000,,,,normal,0,user15,2b8b66f64b605318593982b059a08dae,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00016,16,8,CON016,Combo,Mô tả,https://img/16.jpg,{},89000,89000,,,,normal,0,user16,4de4153595c0977d2389d0880547bd3a,2025-12-05 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00017,17,1,CON017,Combo,Mô tả,https://img/17.jpg,{},89000,89000,,,,normal,0,user17,2a60ff641c890283b1d070f827cf9c0c,2025-12-06 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00018,18,4,CON018,Combo,Mô tả,https://img/18.jpg,{},89000,89000,,,,normal,0,user18,ebc835d1b43e63d1ba35af810da3a23e,2025-12-08 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00019,19,2,CON019,Combo,Mô tả,https://img/19.jpg,{},89000,89000,,,,normal,0,user19,0b6ecb3aa9b23589fb9e314b46c832d9,2025-12-11 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+MAP00020,20,3,CON020,Combo,Mô tả,https://img/20.jpg,{},89000,89000,,,,normal,0,user20,7febe54e79096749ac43dc6c2e3e5d4d,2025-12-11 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f

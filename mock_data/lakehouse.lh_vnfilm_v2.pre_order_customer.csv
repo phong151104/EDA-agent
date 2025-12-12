@@ -1,0 +1,51 @@
+id,identity_name,identity_email,identity_code,identity_code_hash,tax_code,tax_name,tax_address,tax_email,created_date,created_by,created_by_hash
+1,Nguyen Van 1,user1@email.com,USER00001,67d606234ab37b15b642851746da832f,,,,,2025-11-28 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+2,Nguyen Van 2,user2@email.com,USER00002,90f047486012c704754ff403055e7a20,,,,,2025-11-26 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+3,Nguyen Van 3,user3@email.com,USER00003,56adad1da5d535880209d5b435eab604,,,,,2025-11-27 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+4,Nguyen Van 4,user4@email.com,USER00004,717d2f416ed37e22e59a846a0694385d,0123456704,Cty 4,HN,tax4@email.com,2025-11-17 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+5,Nguyen Van 5,user5@email.com,USER00005,8597caf8b69a929c72654269d467f625,,,,,2025-11-16 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+6,Nguyen Van 6,user6@email.com,USER00006,d610b9ff1951f0b8949d7bfb67c60ed7,0123456706,Cty 6,HN,tax6@email.com,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+7,Nguyen Van 7,user7@email.com,USER00007,0122b3450cef045d10bd35ddd02b1dd2,0123456707,Cty 7,HN,tax7@email.com,2025-11-30 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+8,Nguyen Van 8,user8@email.com,USER00008,6130f7c3c242b8834977ecd52d1a197a,,,,,2025-11-16 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+9,Nguyen Van 9,user9@email.com,USER00009,3a6f734d70aa7cdb4e95ce88cec4972b,0123456709,Cty 9,HN,tax9@email.com,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+10,Nguyen Van 10,user10@email.com,USER00010,bab512aa4d3adb83f8754c561d2e9424,,,,,2025-11-21 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+11,Nguyen Van 11,user11@email.com,USER00011,6efbc828462abade155395b37747adc7,,,,,2025-11-25 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+12,Nguyen Van 12,user12@email.com,USER00012,ef39991b066006a7363c120656a49f7f,,,,,2025-11-16 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+13,Nguyen Van 13,user13@email.com,USER00013,1ee2bfb9adc521e470e7f1f6e890db00,,,,,2025-12-05 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+14,Nguyen Van 14,user14@email.com,USER00014,739cbe33e81f144d124482fd8320da94,0123456714,Cty 14,HN,tax14@email.com,2025-11-14 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+15,Nguyen Van 15,user15@email.com,USER00015,080a705e07683327b4e2a1f389d57ee3,0123456715,Cty 15,HN,tax15@email.com,2025-11-25 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+16,Nguyen Van 16,user16@email.com,USER00016,17bc6c802da475466f11aef64a156a81,0123456716,Cty 16,HN,tax16@email.com,2025-11-15 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+17,Nguyen Van 17,user17@email.com,USER00017,42fe8d7159aec144135f79b509e153ea,,,,,2025-11-13 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+18,Nguyen Van 18,user18@email.com,USER00018,b061946d7f5aff89a95066b4726b4a83,0123456718,Cty 18,HN,tax18@email.com,2025-11-23 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+19,Nguyen Van 19,user19@email.com,USER00019,fe36dd37eace358ba526ce0635fa4955,0123456719,Cty 19,HN,tax19@email.com,2025-12-10 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+20,Nguyen Van 20,user20@email.com,USER00020,b300cfa96fabe89012e475fea5c8c180,0123456720,Cty 20,HN,tax20@email.com,2025-11-13 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+21,Nguyen Van 21,user21@email.com,USER00021,d7da0dfe4be1b08d7d15a827c1e9f693,,,,,2025-12-02 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+22,Nguyen Van 22,user22@email.com,USER00022,7407db78b344946ae294821cb355dfb2,,,,,2025-11-28 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+23,Nguyen Van 23,user23@email.com,USER00023,2b539c1f8b978c951b44875bdeccc1fa,0123456723,Cty 23,HN,tax23@email.com,2025-12-08 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+24,Nguyen Van 24,user24@email.com,USER00024,144b88624479ceeab89e2e8e2e1039ed,0123456724,Cty 24,HN,tax24@email.com,2025-11-15 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+25,Nguyen Van 25,user25@email.com,USER00025,211ad5956e5aeab9d36208b31f3d6fb0,,,,,2025-11-29 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+26,Nguyen Van 26,user26@email.com,USER00026,2b9ed068595b61f4110c86e75ab53f53,,,,,2025-12-01 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+27,Nguyen Van 27,user27@email.com,USER00027,ddf14b98de21706bf58f7ce0d9b80c58,0123456727,Cty 27,HN,tax27@email.com,2025-11-14 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+28,Nguyen Van 28,user28@email.com,USER00028,b3e764ab13526ff44521f19e8ac08319,0123456728,Cty 28,HN,tax28@email.com,2025-12-11 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+29,Nguyen Van 29,user29@email.com,USER00029,1babbb6242955b58cefa581a290316df,0123456729,Cty 29,HN,tax29@email.com,2025-11-13 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+30,Nguyen Van 30,user30@email.com,USER00030,f310301d9d56ebce88dc7778a193bddd,0123456730,Cty 30,HN,tax30@email.com,2025-12-01 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+31,Nguyen Van 31,user31@email.com,USER00031,a4bf8292d10d45b2bc3c808dd4dbdfa9,0123456731,Cty 31,HN,tax31@email.com,2025-12-12 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+32,Nguyen Van 32,user32@email.com,USER00032,123822601017520c1178d85eef710996,0123456732,Cty 32,HN,tax32@email.com,2025-11-15 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+33,Nguyen Van 33,user33@email.com,USER00033,3e4951b3353f8334f29c7cbf16d7935e,0123456733,Cty 33,HN,tax33@email.com,2025-11-19 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+34,Nguyen Van 34,user34@email.com,USER00034,0680c0dd418aae04dc2d36f4d7f70e14,0123456734,Cty 34,HN,tax34@email.com,2025-12-04 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+35,Nguyen Van 35,user35@email.com,USER00035,9180cecb5fe62d3b2b5bd35f6f342767,0123456735,Cty 35,HN,tax35@email.com,2025-12-03 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+36,Nguyen Van 36,user36@email.com,USER00036,cb6d6e4273c5a8fe3e3ee2f2081d6cac,0123456736,Cty 36,HN,tax36@email.com,2025-11-27 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+37,Nguyen Van 37,user37@email.com,USER00037,26f5f1ea6b9109a7ebcc88bae0a427a3,0123456737,Cty 37,HN,tax37@email.com,2025-12-12 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+38,Nguyen Van 38,user38@email.com,USER00038,dd0482d7cc186b07890b31b857b9506f,,,,,2025-11-26 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+39,Nguyen Van 39,user39@email.com,USER00039,7e3af68b6862580c6d91e31a46f32ff5,0123456739,Cty 39,HN,tax39@email.com,2025-11-19 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+40,Nguyen Van 40,user40@email.com,USER00040,954873ded8fe7cbbc333b73e7ebda7d1,0123456740,Cty 40,HN,tax40@email.com,2025-11-19 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+41,Nguyen Van 41,user41@email.com,USER00041,ea32902e21bfe8bc10de0e2903b0c20a,,,,,2025-11-19 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+42,Nguyen Van 42,user42@email.com,USER00042,f1bbaa0550429bed6b6331b8e43cf066,0123456742,Cty 42,HN,tax42@email.com,2025-11-24 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+43,Nguyen Van 43,user43@email.com,USER00043,0902ee84f7bad2ff5f381acf8ddc514e,0123456743,Cty 43,HN,tax43@email.com,2025-12-01 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+44,Nguyen Van 44,user44@email.com,USER00044,9ec182ac9b520513b0daf069cc22d3e2,0123456744,Cty 44,HN,tax44@email.com,2025-11-14 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+45,Nguyen Van 45,user45@email.com,USER00045,4b435311373ba542524f30d4f64a382b,0123456745,Cty 45,HN,tax45@email.com,2025-11-17 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+46,Nguyen Van 46,user46@email.com,USER00046,1ff65deda2417e03badfbc47d20e1df9,0123456746,Cty 46,HN,tax46@email.com,2025-12-03 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+47,Nguyen Van 47,user47@email.com,USER00047,92e75467cb6feecff214538e29d7319d,0123456747,Cty 47,HN,tax47@email.com,2025-11-15 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+48,Nguyen Van 48,user48@email.com,USER00048,6a9cbd8195a5963c81182a95e8d7b990,,,,,2025-11-26 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+49,Nguyen Van 49,user49@email.com,USER00049,04d413ced4e880b66ebcb45daaa14116,,,,,2025-11-20 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
+50,Nguyen Van 50,user50@email.com,USER00050,e4a7608720f4ecbcb6190e17b38e6c14,0123456750,Cty 50,HN,tax50@email.com,2025-11-21 17:33:29.000000,system,bbc5e661e106c6dcd8dc6dd186454c2f
