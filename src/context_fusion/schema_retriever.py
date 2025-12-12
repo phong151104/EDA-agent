@@ -442,45 +442,52 @@ class SchemaRetriever:
         domain: str,
     ) -> Dict[str, int]:
         """
-        Search for tables matching keywords via Cypher.
-        Returns table_name -> match_count mapping.
+        Search for tables matching keywords using Neo4j Fulltext Index.
+        
+        Uses fulltext search with fuzzy matching for better performance
+        and typo tolerance compared to CONTAINS queries.
+        
+        Returns:
+            table_name -> match_count mapping
         """
         if not keywords:
             return {}
         
-        # Simpler approach: search each keyword and count matches per table
-        query = """
-        MATCH (t:Table {domain: $domain})
-        OPTIONAL MATCH (t)-[:HAS_COLUMN]->(c:Column)
-        OPTIONAL MATCH (t)-[:HAS_CONCEPT]->(con:Concept)
-        WITH t, collect(DISTINCT c) AS cols, collect(DISTINCT con) AS cons, $keywords AS keywords
-        WITH t, cols, cons, keywords,
-             size([kw IN keywords WHERE 
-                toLower(t.table_name) CONTAINS toLower(kw) OR
-                toLower(t.business_name) CONTAINS toLower(kw) OR
-                toLower(t.description) CONTAINS toLower(kw) OR
-                any(col IN cols WHERE 
-                    toLower(col.column_name) CONTAINS toLower(kw) OR
-                    toLower(col.business_name) CONTAINS toLower(kw) OR
-                    any(sem IN col.semantics WHERE toLower(sem) CONTAINS toLower(kw))
-                ) OR
-                any(concept IN cons WHERE 
-                    toLower(concept.name) CONTAINS toLower(kw) OR
-                    any(syn IN concept.synonyms WHERE toLower(syn) CONTAINS toLower(kw))
-                )
-             ]) AS match_count
-        WHERE match_count > 0
-        RETURN t.table_name AS table_name, match_count
-        ORDER BY match_count DESC
-        LIMIT 20
-        """
+        logger.info(f"[FULLTEXT] Searching with keywords: {keywords}")
         
-        try:
-            results = self.execute_query(query, {"keywords": keywords, "domain": domain})
-            return {r["table_name"]: r.get("match_count", 1) for r in results}
-        except Exception as e:
-            logger.warning(f"Keyword search failed: {e}")
-            return {}
+        # Use fulltext search with fuzzy matching
+        fulltext_results = self.vector_index.fulltext_search(
+            search_terms=keywords,
+            label=None,  # Search all labels
+            top_k=30,
+            fuzzy=True,
+        )
+        
+        # Count matches per table
+        table_match_counts: Dict[str, int] = {}
+        
+        for result in fulltext_results:
+            label = result.get("label", "")
+            props = result.get("props", {})
+            score = result.get("score", 0)
+            
+            # Extract table name based on node type
+            if label == "Table":
+                table_name = props.get("table_name", "")
+                # Filter by domain
+                if props.get("domain") == domain:
+                    table_match_counts[table_name] = table_match_counts.get(table_name, 0) + 1
+            elif label == "Column":
+                table_name = props.get("table_name", "")
+                if table_name:  # Columns belong to tables
+                    table_match_counts[table_name] = table_match_counts.get(table_name, 0) + 1
+            elif label == "Concept":
+                # Concepts may be linked to multiple tables - need to query
+                # For now, skip concept matches in table counting
+                pass
+        
+        logger.info(f"[FULLTEXT] Found {len(table_match_counts)} tables from fulltext search")
+        return table_match_counts
     
     def _expand_context(
         self,
@@ -488,8 +495,14 @@ class SchemaRetriever:
         depth: int,
         relevant_columns: Set[tuple],
         domain: str,
+        query_embedding: List[float] | None = None,
     ) -> Dict[str, Any]:
-        """Expand context using graph traversal with Entity-guided path search."""
+        """
+        Expand context using graph traversal with smart column filtering.
+        
+        Optimized to only return relevant columns instead of all columns,
+        reducing token usage significantly.
+        """
         if not table_names:
             return {"tables": [], "columns": [], "joins": [], "metrics": []}
         
@@ -520,56 +533,14 @@ class SchemaRetriever:
         """
         tables = self.execute_query(tables_query, {"table_names": all_table_names_list})
         
-        # === STEP 3: Get key columns (PK, time) ===
-        key_columns_query = """
-        MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
-        WHERE t.table_name IN $table_names
-          AND (r.primary_key = true OR r.time_column = true)
-        RETURN t.table_name AS table_name,
-               c.column_name AS column_name,
-               c.data_type AS data_type,
-               c.business_name AS business_name,
-               c.description AS description,
-               c.semantics AS semantics,
-               r.primary_key AS is_primary_key,
-               r.time_column AS is_time_column
-        ORDER BY t.table_name, c.column_name
-        """
-        key_columns = self.execute_query(key_columns_query, {"table_names": all_table_names_list})
+        # === STEP 3: Smart Column Filtering ===
+        columns = self._get_relevant_columns(
+            table_names=all_table_names_list,
+            relevant_columns=relevant_columns,
+            query_embedding=query_embedding,
+        )
         
-        # === STEP 4: Get vector-matched columns ===
-        vector_columns = []
-        if relevant_columns:
-            all_columns_query = """
-            MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
-            WHERE t.table_name IN $table_names
-            RETURN t.table_name AS table_name,
-                   c.column_name AS column_name,
-                   c.data_type AS data_type,
-                   c.business_name AS business_name,
-                   c.description AS description,
-                   c.semantics AS semantics,
-                   r.primary_key AS is_primary_key,
-                   r.time_column AS is_time_column
-            """
-            all_cols = self.execute_query(all_columns_query, {"table_names": all_table_names_list})
-            for col in all_cols:
-                if (col['table_name'], col['column_name']) in relevant_columns:
-                    vector_columns.append(col)
-        
-        # Merge columns
-        columns_dict = {}
-        for col in key_columns:
-            key = (col['table_name'], col['column_name'])
-            columns_dict[key] = col
-        for col in vector_columns:
-            key = (col['table_name'], col['column_name'])
-            if key not in columns_dict:
-                columns_dict[key] = col
-        
-        columns = sorted(columns_dict.values(), key=lambda x: (x['table_name'], x['column_name']))
-        
-        # === STEP 5: Fallback - if no paths found, use legacy join fetch ===
+        # === STEP 4: Fallback - if no paths found, use legacy join fetch ===
         if not joins and len(table_names_list) > 1:
             logger.warning("[EXPAND] No paths found, falling back to legacy join fetch")
             joins_query = """
@@ -603,7 +574,7 @@ class SchemaRetriever:
                     "description": "",
                 })
         
-        # === STEP 6: Get metrics ===
+        # === STEP 5: Get metrics ===
         metrics_query = """
         MATCH (m:Metric)
         WHERE m.base_table IN $table_names
@@ -622,6 +593,198 @@ class SchemaRetriever:
             "joins": joins,
             "metrics": metrics,
         }
+    
+    def _get_relevant_columns(
+        self,
+        table_names: List[str],
+        relevant_columns: Set[tuple],
+        query_embedding: List[float] | None = None,
+        max_per_table: int = 10,
+    ) -> List[Dict]:
+        """
+        Get only relevant columns instead of all columns.
+        
+        Strategy:
+        1. Always include: PK, FK, Time columns (needed for joins/filters)
+        2. Include columns matched by vector search
+        3. If embedding provided, find additional relevant columns via vector search
+        
+        This significantly reduces tokens sent to LLM.
+        
+        Args:
+            table_names: Tables to get columns for
+            relevant_columns: Set of (table_name, column_name) from vector search
+            query_embedding: Optional embedding for additional column search
+            max_per_table: Maximum columns per table (excluding must-have)
+            
+        Returns:
+            List of column dictionaries
+        """
+        logger.info(f"[SMART_COLUMNS] Getting relevant columns for {len(table_names)} tables")
+        
+        # === STEP 1: Get must-have columns (PK, FK, Time) ===
+        must_have_query = """
+        MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
+        WHERE t.table_name IN $table_names
+          AND (r.primary_key = true OR r.foreign_key = true OR r.time_column = true)
+        RETURN t.table_name AS table_name,
+               c.column_name AS column_name,
+               c.data_type AS data_type,
+               c.business_name AS business_name,
+               c.description AS description,
+               c.semantics AS semantics,
+               r.primary_key AS is_primary_key,
+               r.foreign_key AS is_foreign_key,
+               r.time_column AS is_time_column,
+               'must_have' AS source
+        """
+        must_have_cols = self.execute_query(must_have_query, {"table_names": table_names})
+        logger.info(f"[SMART_COLUMNS] Must-have columns (PK/FK/Time): {len(must_have_cols)}")
+        
+        # === STEP 2: Get vector-matched columns ===
+        vector_matched_cols = []
+        if relevant_columns:
+            vector_query = """
+            MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
+            WHERE t.table_name IN $table_names
+            RETURN t.table_name AS table_name,
+                   c.column_name AS column_name,
+                   c.data_type AS data_type,
+                   c.business_name AS business_name,
+                   c.description AS description,
+                   c.semantics AS semantics,
+                   r.primary_key AS is_primary_key,
+                   r.foreign_key AS is_foreign_key,
+                   r.time_column AS is_time_column,
+                   'vector_match' AS source
+            """
+            all_cols = self.execute_query(vector_query, {"table_names": table_names})
+            for col in all_cols:
+                if (col['table_name'], col['column_name']) in relevant_columns:
+                    vector_matched_cols.append(col)
+            logger.info(f"[SMART_COLUMNS] Vector-matched columns: {len(vector_matched_cols)}")
+        
+        # === STEP 3: Additional vector search on columns (if embedding provided) ===
+        vector_search_cols = []
+        if query_embedding:
+            try:
+                vector_results = self.vector_index._search_single_label(
+                    query_embedding=query_embedding,
+                    label="Column",
+                    top_k=15,
+                )
+                for result in vector_results:
+                    props = result.get("props", {})
+                    table_name = props.get("table_name", "")
+                    if table_name in table_names and result.get("score", 0) > 0.6:
+                        vector_search_cols.append({
+                            "table_name": table_name,
+                            "column_name": props.get("column_name", ""),
+                            "data_type": props.get("data_type", ""),
+                            "business_name": props.get("business_name", ""),
+                            "description": props.get("description", ""),
+                            "semantics": props.get("semantics", []),
+                            "is_primary_key": False,
+                            "is_foreign_key": False,
+                            "is_time_column": False,
+                            "source": "vector_search",
+                            "score": result.get("score", 0),
+                        })
+                logger.info(f"[SMART_COLUMNS] Vector search found: {len(vector_search_cols)} columns")
+            except Exception as e:
+                logger.warning(f"[SMART_COLUMNS] Vector column search failed: {e}")
+        
+        # === STEP 4: Include display/name columns ===
+        # These are essential for GROUP BY and human-readable output
+        # Include from both dimension tables AND denormalized columns in fact tables
+        display_cols_query = """
+        MATCH (t:Table)-[r:HAS_COLUMN]->(c:Column)
+        WHERE t.table_name IN $table_names
+          AND (
+            // Dimension tables - get name/title/code columns
+            ((t.table_type = 'dimension' OR t.table_type = 'dim') AND (
+              c.column_name CONTAINS 'name' OR 
+              c.column_name CONTAINS 'title' OR
+              c.column_name CONTAINS 'code'
+            ))
+            OR
+            // Any table - get denormalized display columns (cinema_name, vendor_name, etc.)
+            c.column_name CONTAINS 'cinema_name' OR
+            c.column_name CONTAINS 'vendor_name' OR
+            c.column_name CONTAINS 'film_name' OR
+            c.column_name CONTAINS 'bank_name' OR
+            c.column_name CONTAINS 'status'
+            OR
+            // Semantic hints
+            any(sem IN c.semantics WHERE sem IN ['name', 'title', 'label', 'display'])
+          )
+        RETURN t.table_name AS table_name,
+               c.column_name AS column_name,
+               c.data_type AS data_type,
+               c.business_name AS business_name,
+               c.description AS description,
+               c.semantics AS semantics,
+               false AS is_primary_key,
+               false AS is_foreign_key,
+               false AS is_time_column,
+               'display_column' AS source
+        """
+        try:
+            display_cols = self.execute_query(display_cols_query, {"table_names": table_names})
+            logger.info(f"[SMART_COLUMNS] Display columns (dim + denormalized): {len(display_cols)}")
+        except Exception as e:
+            logger.warning(f"[SMART_COLUMNS] Display column query failed: {e}")
+            display_cols = []
+        
+        # === STEP 5: Merge and deduplicate ===
+        columns_dict = {}
+        
+        # Priority 1: Must-have columns
+        for col in must_have_cols:
+            key = (col['table_name'], col['column_name'])
+            columns_dict[key] = col
+        
+        # Priority 2: Display columns (name_vi, etc.)
+        for col in display_cols:
+            key = (col['table_name'], col['column_name'])
+            if key not in columns_dict:
+                columns_dict[key] = col
+        
+        # Priority 3: Vector-matched columns
+        for col in vector_matched_cols:
+            key = (col['table_name'], col['column_name'])
+            if key not in columns_dict:
+                columns_dict[key] = col
+        
+        # Priority 4: Vector search columns (limit per table)
+        table_counts = {}
+        for col in sorted(vector_search_cols, key=lambda x: x.get("score", 0), reverse=True):
+            key = (col['table_name'], col['column_name'])
+            table_name = col['table_name']
+            
+            if key not in columns_dict:
+                table_counts[table_name] = table_counts.get(table_name, 0) + 1
+                if table_counts[table_name] <= max_per_table:
+                    columns_dict[key] = col
+        
+        columns = sorted(columns_dict.values(), key=lambda x: (x['table_name'], x['column_name']))
+        
+        # Log summary
+        total_possible = self._count_total_columns(table_names)
+        savings = ((total_possible - len(columns)) / total_possible * 100) if total_possible > 0 else 0
+        logger.info(f"[SMART_COLUMNS] ✅ Selected {len(columns)}/{total_possible} columns (~{savings:.0f}% reduction)")
+        
+        return columns
+    
+    def _count_total_columns(self, table_names: List[str]) -> int:
+        """Count total columns in tables for statistics."""
+        query = """
+        MATCH (t:Table)-[:HAS_COLUMN]->(c:Column)
+        WHERE t.table_name IN $table_names
+        RETURN count(c) AS total
+        """
+        result = self.execute_query(query, {"table_names": table_names})
+        return result[0]["total"] if result else 0
     
     def __enter__(self):
         return self
