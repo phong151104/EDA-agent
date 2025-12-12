@@ -23,7 +23,9 @@ class VerificationIssue:
     severity: str  # "error", "warning", "info"
     step_id: str  # Which step has the issue
     message: str
+    issue_type: str = ""  # table_not_found, column_not_found, etc.
     suggestion: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -31,7 +33,9 @@ class VerificationIssue:
             "severity": self.severity,
             "step_id": self.step_id,
             "message": self.message,
+            "issue_type": self.issue_type,
             "suggestion": self.suggestion,
+            "details": self.details or {},
         }
 
 
@@ -176,8 +180,10 @@ class PlanVerifier:
                             layer="data",
                             severity="error",
                             step_id=step_id,
+                            issue_type="table_not_found",
                             message=f"Table '{table}' không tồn tại",
                             suggestion=f"Có thể dùng '{similar}'?" if similar else None,
+                            details={"step_id": step_id, "table": table, "similar": similar},
                         ))
                         logger.warning(f"[Critic]     ❌ Table '{table}' NOT FOUND")
                     else:
@@ -214,8 +220,10 @@ class PlanVerifier:
                             layer="data",
                             severity="warning",
                             step_id=step_id,
+                            issue_type="column_not_mapped",
                             message=f"Chưa map được '{data}' với column cụ thể",
                             suggestion="Code Agent sẽ xác định column phù hợp",
+                            details={"step_id": step_id, "data_needed": data},
                         ))
                         logger.info(f"[Critic]     ⚠️ '{data}' - no exact match, Code Agent will resolve")
         

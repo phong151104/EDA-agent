@@ -157,6 +157,8 @@ async def critic_node(state: EDAState) -> dict[str, Any]:
     Layer 1: Data Availability (Neo4j query)
     Layer 2: Logical Consistency (Rules-based)
     Layer 3: Business Logic (Optional LLM)
+    
+    On max iterations: Filters out invalid hypotheses and approves valid ones.
     """
     from src.validation import PlanVerifier
     
@@ -196,15 +198,57 @@ async def critic_node(state: EDAState) -> dict[str, Any]:
     # =========================================================================
     
     plan_approved = result.passed
+    filtered_plan = None
     
-    # Force approve if max iterations reached and no critical errors
-    has_critical_errors = any(
-        i.severity == "error" for i in result.issues
-    )
-    
-    if iteration >= max_iterations and not has_critical_errors:
-        logger.warning(f"[Critic] Max iterations ({max_iterations}) reached, forcing approval")
-        plan_approved = True
+    # On max iterations: Filter invalid hypotheses and approve valid ones
+    if iteration >= max_iterations and not plan_approved:
+        logger.info(f"[Critic] ───────────────────────────────────────────────")
+        logger.info(f"[Critic] MAX ITERATIONS REACHED - FILTERING PLAN")
+        logger.info(f"[Critic] ───────────────────────────────────────────────")
+        
+        # Collect step IDs with table errors
+        invalid_step_ids = set()
+        for issue in result.issues:
+            if issue.severity == "error" and issue.issue_type == "table_not_found":
+                step_id = issue.details.get("step_id") if issue.details else None
+                if step_id:
+                    invalid_step_ids.add(step_id)
+        
+        # Find hypothesis IDs associated with invalid steps
+        invalid_hypothesis_ids = set()
+        for step in steps:
+            step_id = step.get("id", "")
+            if step_id in invalid_step_ids:
+                hypo_id = step.get("hypothesis_id", "")
+                if hypo_id:
+                    invalid_hypothesis_ids.add(hypo_id)
+        
+        # Filter hypotheses and steps
+        valid_hypotheses = [
+            h for h in hypotheses 
+            if h.get("id", "") not in invalid_hypothesis_ids
+        ]
+        valid_steps = [
+            s for s in steps 
+            if s.get("hypothesis_id", "") not in invalid_hypothesis_ids
+        ]
+        
+        logger.info(f"[Critic] Removed hypotheses: {invalid_hypothesis_ids}")
+        logger.info(f"[Critic] Remaining: {len(valid_hypotheses)} hypotheses, {len(valid_steps)} steps")
+        
+        if valid_hypotheses and valid_steps:
+            # Create filtered plan
+            filtered_plan = {
+                **plan_dict,
+                "hypotheses": valid_hypotheses,
+                "steps": valid_steps,
+                "filtered": True,
+                "removed_hypotheses": list(invalid_hypothesis_ids),
+            }
+            plan_approved = True
+            logger.info(f"[Critic] ✅ SOFT APPROVAL - Proceeding with valid hypotheses only")
+        else:
+            logger.error(f"[Critic] ❌ No valid hypotheses remaining!")
     
     # Format feedback for Planner
     feedback = ""
@@ -221,7 +265,11 @@ async def critic_node(state: EDAState) -> dict[str, Any]:
     # Score: 1.0 if no issues, decreases with issues
     approval_score = max(0.0, 1.0 - (errors * 0.3) - (warnings * 0.1))
     
-    return {
+    # Use filtered plan if available
+    final_plan = filtered_plan if filtered_plan else plan_dict
+    
+    # Build return dict - only include current_plan if we filtered it
+    result_dict = {
         "validation_result": {
             "status": "approved" if plan_approved else "rejected",
             "approval_score": approval_score,
@@ -231,23 +279,39 @@ async def critic_node(state: EDAState) -> dict[str, Any]:
             "issues": [i.to_dict() for i in result.issues],
             "total_errors": errors,
             "total_warnings": warnings,
+            "filtered": filtered_plan is not None,
         },
         "critic_feedback": feedback if not plan_approved else None,
         "debate_iteration": iteration,
         "plan_approved": plan_approved,
         "current_phase": WorkflowPhase.EXECUTION.value if plan_approved else WorkflowPhase.PLANNING.value,
-        "messages": [AIMessage(content=f"[Critic] {'Approved' if plan_approved else 'Rejected'} (L1:{'✅' if result.layer1_passed else '❌'} L2:{'✅' if result.layer2_passed else '❌'} L3:{'✅' if result.layer3_passed else '⏭️'})")],
+        "messages": [AIMessage(content=f"[Critic] {'Approved' if plan_approved else 'Rejected'} (L1:{'✅' if result.layer1_passed else '❌'} L2:{'✅' if result.layer2_passed else '❌'} L3:{'✅' if result.layer3_passed else '⏭️'}){' [FILTERED]' if filtered_plan else ''}")],
     }
-
-
-
+    
+    # Only update current_plan if we filtered it
+    if filtered_plan:
+        result_dict["current_plan"] = filtered_plan
+    
+    return result_dict
 async def code_agent_node(state: EDAState) -> dict[str, Any]:
     """
     Code Agent node.
     
-    Generates and executes code for the analysis plan.
+    Receives approved plan from Critic and generates/executes code.
     """
-    logger.info("Generating and executing code...")
+    from src.agents.code_agent import CodeAgentInput, ExecutionResult, ExecutionStatus, OutputType
+    
+    logger.info("[CodeAgent] ═══════════════════════════════════════════════")
+    logger.info("[CodeAgent] GENERATING CODE FROM APPROVED PLAN")
+    logger.info("[CodeAgent] ═══════════════════════════════════════════════")
+    
+    # Check if plan is approved
+    if not state.get("plan_approved"):
+        logger.warning("[CodeAgent] Plan not approved yet, cannot execute")
+        return {
+            "error_message": "Plan not approved by Critic",
+            "current_phase": WorkflowPhase.PLANNING.value,
+        }
     
     if not state.get("current_plan"):
         return {
@@ -255,27 +319,45 @@ async def code_agent_node(state: EDAState) -> dict[str, Any]:
             "current_phase": WorkflowPhase.ERROR.value,
         }
     
+    plan_dict = state["current_plan"]
+    
+    logger.info(f"[CodeAgent] Plan version: {plan_dict.get('version', 1)}")
+    logger.info(f"[CodeAgent] Hypotheses: {len(plan_dict.get('hypotheses', []))}")
+    logger.info(f"[CodeAgent] Steps: {len(plan_dict.get('steps', []))}")
+    
     # Initialize code agent
     code_agent = CodeAgent()
     
-    # Reconstruct plan
-    plan_dict = state["current_plan"]
+    # Reconstruct plan with new format
     plan = AnalysisPlan(
-        question=plan_dict.get("question", ""),
+        question=plan_dict.get("question", state.get("question", "")),
         hypotheses=[Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])],
         steps=[AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])],
         version=plan_dict.get("version", 1),
     )
     
-    # Build input
+    # Get schema context from sub_graph (passed from Context Fusion)
+    sub_graph = state.get("sub_graph", {})
+    schema_context = {
+        "tables": sub_graph.get("tables", []),
+        "columns": sub_graph.get("columns", []),
+        "joins": sub_graph.get("joins", []),
+    }
+    
+    logger.info(f"[CodeAgent] Schema context: {len(schema_context['tables'])} tables, "
+                f"{len(schema_context['columns'])} columns, {len(schema_context['joins'])} joins")
+    
+    # Build input with schema context
     error_to_fix = None
     if state.get("execution_errors"):
         error_to_fix = state["execution_errors"][-1]
     
     code_input = CodeAgentInput(
         plan=plan,
+        schema_context=schema_context,
         previous_results={
-            int(k): v for k, v in state.get("execution_results", {}).items()
+            str(k): v for k, v in state.get("execution_results", {}).items()
+            if isinstance(v, ExecutionResult)
         },
         error_to_fix=error_to_fix,
         retry_count=state.get("code_retry_count", 0),
@@ -284,16 +366,37 @@ async def code_agent_node(state: EDAState) -> dict[str, Any]:
     # Execute
     output = await code_agent.process(code_input)
     
+    # Log results
+    logger.info("[CodeAgent] ───────────────────────────────────────────────")
+    logger.info("[CodeAgent] EXECUTION RESULTS:")
+    for step_id, result in output.execution_results.items():
+        status_icon = "✅" if result.status == ExecutionStatus.SUCCESS else "❌"
+        logger.info(f"[CodeAgent]   {status_icon} {step_id}: {result.status.value}")
+    
     # Handle errors
     execution_errors = list(state.get("execution_errors", []))
-    for step_num, result in output.execution_results.items():
-        if result.status.value == "error":
-            execution_errors.append(result.error_message or "Unknown error")
+    for step_id, result in output.execution_results.items():
+        if result.status == ExecutionStatus.ERROR:
+            execution_errors.append(result.error_message or f"Error in {step_id}")
     
     # Update retry count if there were errors
     code_retry_count = state.get("code_retry_count", 0)
     if not output.all_success:
         code_retry_count += 1
+        logger.warning(f"[CodeAgent] Errors occurred, retry count: {code_retry_count}")
+    
+    # Determine next phase
+    if output.all_success:
+        next_phase = WorkflowPhase.ANALYSIS.value
+        logger.info("[CodeAgent] ✅ All steps executed successfully!")
+    elif code_retry_count >= code_agent.max_retries:
+        next_phase = WorkflowPhase.ERROR.value
+        logger.error(f"[CodeAgent] ❌ Max retries ({code_agent.max_retries}) reached")
+    else:
+        next_phase = WorkflowPhase.EXECUTION.value
+        logger.info(f"[CodeAgent] Will retry (attempt {code_retry_count + 1})")
+    
+    logger.info("[CodeAgent] ═══════════════════════════════════════════════")
     
     return {
         "generated_code": [c.to_dict() for c in output.generated_code],
@@ -302,9 +405,11 @@ async def code_agent_node(state: EDAState) -> dict[str, Any]:
         },
         "execution_errors": execution_errors,
         "code_retry_count": code_retry_count,
-        "current_phase": WorkflowPhase.ANALYSIS.value if output.all_success else WorkflowPhase.EXECUTION.value,
-        "messages": [AIMessage(content=f"[CodeAgent] Executed {len(output.generated_code)} steps")],
+        "all_code_success": output.all_success,
+        "current_phase": next_phase,
+        "messages": [AIMessage(content=f"[CodeAgent] Executed {len(output.generated_code)} steps ({'✅ All success' if output.all_success else '❌ Has errors'})")],
     }
+
 
 
 async def analyst_node(state: EDAState) -> dict[str, Any]:
