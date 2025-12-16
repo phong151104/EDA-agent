@@ -32,6 +32,13 @@ class WorkflowPhase(str, Enum):
     ERROR = "error"
 
 
+class AnalysisPhase(str, Enum):
+    """Phase of analysis: exploration first, then deep dive."""
+    
+    EXPLORATION = "exploration"  # Phase 1: Overview hypotheses
+    DEEP_DIVE = "deep_dive"      # Phase 2: Detailed analysis
+
+
 class EDAState(TypedDict, total=False):
     """
     Shared state for the EDA workflow.
@@ -80,6 +87,11 @@ class EDAState(TypedDict, total=False):
     # === Approval Layer ===
     is_insight_sufficient: bool
     final_report: dict[str, Any] | None
+    
+    # === Two-Phase Analysis Control ===
+    analysis_phase: str  # "exploration" or "deep_dive"
+    exploration_summary: dict[str, Any] | None  # Data findings from Phase 1
+    deep_dive_iteration: int  # Counter for Phase 2 loops (max 3)
     
     # === Workflow Control ===
     current_phase: str
@@ -138,6 +150,11 @@ def create_initial_state(question: str) -> EDAState:
         # Approval
         is_insight_sufficient=False,
         final_report=None,
+        
+        # Two-Phase Analysis
+        analysis_phase=AnalysisPhase.EXPLORATION.value,  # Start with exploration
+        exploration_summary=None,
+        deep_dive_iteration=0,
         
         # Control
         current_phase=WorkflowPhase.CONTEXT_FUSION.value,

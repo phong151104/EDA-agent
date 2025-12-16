@@ -150,12 +150,15 @@ Nếu có lỗi, mô tả chi tiết lỗi gì và cách fix."""
                             elif content_block.type == "image_file":
                                 # Get file content as base64
                                 file_id = content_block.image_file.file_id
+                                if not file_id:
+                                    logger.debug("[CodeInterpreter] Skipping empty file_id")
+                                    continue
                                 try:
                                     file_data = self.client.files.content(file_id)
                                     import base64
                                     images.append(base64.b64encode(file_data.content).decode())
                                 except Exception as e:
-                                    logger.warning(f"Failed to get image: {e}")
+                                    logger.warning(f"Failed to get image {file_id}: {e}")
                 
                 logger.info(f"[CodeInterpreter] ✅ Execution completed in {execution_time}ms")
                 
@@ -223,8 +226,60 @@ import seaborn as sns
 {code}
 """
         return await self.execute(full_code)
+    
+    async def execute_with_multiple_dataframes(
+        self,
+        code: str,
+        dataframes: dict[str, list],  # {step_id: sql_data}
+    ) -> CodeExecutionResult:
+        """
+        Execute code with multiple pre-loaded DataFrames.
+        
+        Args:
+            code: Python code (can reference df_<step_id> variables)
+            dataframes: Dict mapping step_id to SQL result data
+            
+        Returns:
+            CodeExecutionResult
+            
+        Example:
+            dataframes = {"s1": [...], "s2": [...]}
+            # Code can use: df_s1, df_s2
+        """
+        import json as json_module
+        
+        # Build data loading code
+        load_lines = [
+            "import pandas as pd",
+            "import matplotlib.pyplot as plt", 
+            "import seaborn as sns",
+            "import numpy as np",
+            "",
+            "# Load data from previous SQL queries",
+        ]
+        
+        for step_id, data in dataframes.items():
+            df_name = f"df_{step_id}"
+            json_str = json_module.dumps(data, ensure_ascii=False, default=str)
+            load_lines.append(f"{df_name} = pd.read_json('''{json_str}''')")
+        
+        # Also create convenient 'df' alias for the first or only DataFrame
+        if len(dataframes) == 1:
+            first_step = list(dataframes.keys())[0]
+            load_lines.append(f"df = df_{first_step}  # Alias for convenience")
+        elif len(dataframes) > 1:
+            load_lines.append("")
+            load_lines.append("# Available DataFrames: " + ", ".join(f"df_{k}" for k in dataframes.keys()))
+        
+        load_lines.append("")
+        load_lines.append("# User code")
+        
+        full_code = "\n".join(load_lines) + "\n" + code
+        
+        return await self.execute(full_code)
 
 
 async def execute_code(code: str, data: dict[str, Any] | None = None) -> CodeExecutionResult:
     """Quick function to execute code."""
     return await CodeInterpreter().execute(code, data)
+

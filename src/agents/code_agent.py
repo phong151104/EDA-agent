@@ -32,6 +32,7 @@ class ExecutionStatus(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
     TIMEOUT = "timeout"
+    SKIPPED = "skipped"  # Visualization skipped due to failed SQL dependency
 
 
 class OutputType(str, Enum):
@@ -261,6 +262,7 @@ import pandas as pd
                     step_id=step_id,
                     hypo_id=hypo_id,
                     question=input_data.plan.question,
+                    schema_context=input_data.schema_context,
                 )
                 generated_code.append(code)
                 execution_results[step_id] = result
@@ -322,8 +324,10 @@ import pandas as pd
         step_id: str,
         hypo_id: str,
         question: str,
+        schema_context=None,  # NEW: schema context for error hints
+        max_retries: int = 3,  # max retry attempts
     ) -> tuple[GeneratedCode, ExecutionResult]:
-        """Generate SQL using MCP text_to_sql tool."""
+        """Generate SQL using MCP text_to_sql tool and execute it with retry on error."""
         
         # Build natural language prompt from step requirements
         reqs = step.requirements if hasattr(step, 'requirements') else step.details or {}
@@ -333,64 +337,199 @@ import pandas as pd
         grouping = reqs.get("grouping", [])
         tables_hint = reqs.get("tables_hint", [])
         
-        # Combine into natural language prompt
-        prompt_parts = [step.description]
+        # Build natural language prompt for text_to_sql
+        nl_prompt = f"""Yêu cầu: {step.description}
+
+Dữ liệu cần lấy: {', '.join(data_needed) if data_needed else 'theo mô tả'}
+Điều kiện lọc: {', '.join(filters) if filters else 'không có'}
+Nhóm theo: {grouping if grouping else 'không nhóm'}
+Bảng gợi ý: {', '.join(tables_hint) if tables_hint else 'tự chọn'}
+
+Câu hỏi gốc: {question}"""
         
-        if data_needed:
-            prompt_parts.append(f"Cần lấy: {', '.join(data_needed)}")
-        if filters:
-            prompt_parts.append(f"Lọc theo: {', '.join(filters)}")
-        if grouping:
-            prompt_parts.append(f"Nhóm theo: {', '.join(grouping)}")
-        if tables_hint:
-            prompt_parts.append(f"Từ bảng: {', '.join(tables_hint)}")
+        last_error = None
+        last_sql = None
         
-        nl_prompt = ". ".join(prompt_parts)
-        
-        logger.info(f"[CodeAgent] Calling text_to_sql: {nl_prompt[:80]}...")
-        
-        # Call MCP text_to_sql tool
-        result = await mcp.call_tool("text_to_sql", {"prompt": nl_prompt})
-        
-        if result.success:
+        # === RETRY LOOP with error feedback ===
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"[CodeAgent] SQL attempt {attempt}/{max_retries}: {nl_prompt[:80]}...")
+            
+            # Add error feedback to prompt if retrying
+            prompt_with_feedback = nl_prompt
+            if last_error and last_sql:
+                # Build detailed error context
+                error_hints = self._build_sql_error_hints(last_error, schema_context)
+                
+                prompt_with_feedback = f"""{nl_prompt}
+
+⚠️ **LẦN TRƯỚC THẤT BẠI - CẦN SỬA LỖI:**
+
+**SQL đã sinh:**
+```sql
+{last_sql}
+```
+
+**Lỗi gặp phải:** {last_error}
+
+**Hướng dẫn sửa:**
+{error_hints}
+
+**YÊU CẦU:** Sinh SQL MỚI sửa lỗi trên. PHẢI kiểm tra:
+1. Tên cột/bảng đúng chính xác (case-sensitive)
+2. Data types phù hợp khi so sánh/aggregate
+3. PostgreSQL syntax (EXTRACT, DATE_TRUNC, COALESCE, etc.)"""
+            
+            # Call MCP text_to_sql tool
+            result = await mcp.call_tool("text_to_sql", {"prompt": prompt_with_feedback})
+            
+            if not result.success:
+                last_error = result.error
+                logger.warning(f"[CodeAgent] ⚠️ text_to_sql failed (attempt {attempt}): {result.error}")
+                continue  # Retry
+            
             sql = result.output.get("sql", "")
             tables_used = result.output.get("tables_used", [])
+            last_sql = sql
             
             logger.info(f"[CodeAgent] ✅ SQL generated ({len(sql)} chars)")
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="sql",
-                    code=sql,
-                    description=step.description,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.SUCCESS,
-                    output_type=OutputType.TEXT,
-                    output={"sql": sql, "tables_used": tables_used},
-                    execution_time_ms=result.execution_time_ms,
-                ),
-            )
-        else:
-            logger.error(f"[CodeAgent] ❌ text_to_sql failed: {result.error}")
+            # Execute the SQL
+            exec_result = await mcp.call_tool("execute_sql", {"query": sql})
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="sql",
-                    code=f"-- Error: {result.error}",
-                    description=step.description,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.ERROR,
-                    output_type=OutputType.ERROR,
-                    output=None,
-                    error_message=result.error,
-                ),
-            )
+            if exec_result.success:
+                sql_data = exec_result.output.get("rows", [])
+                columns = exec_result.output.get("columns", [])
+                row_count = exec_result.output.get("row_count", 0)
+                logger.info(f"[CodeAgent] ✅ SQL executed: {row_count} rows")
+                
+                return (
+                    GeneratedCode(
+                        step_id=step_id,
+                        hypothesis_id=hypo_id,
+                        language="sql",
+                        code=sql,
+                        description=step.description,
+                    ),
+                    ExecutionResult(
+                        status=ExecutionStatus.SUCCESS,
+                        output_type=OutputType.DATAFRAME if sql_data else OutputType.TEXT,
+                        output={
+                            "sql": sql,
+                            "tables_used": tables_used,
+                            "sql_data": sql_data,
+                            "columns": columns if sql_data else [],
+                            "row_count": row_count if sql_data else 0,
+                        },
+                        execution_time_ms=result.execution_time_ms + exec_result.execution_time_ms,
+                    ),
+                )
+            else:
+                # SQL execution failed - save error for retry
+                last_error = exec_result.error
+                logger.warning(f"[CodeAgent] ⚠️ SQL execution failed (attempt {attempt}): {exec_result.error}")
+                # Continue to next retry
+        
+        # All retries exhausted
+        logger.error(f"[CodeAgent] ❌ SQL failed after {max_retries} attempts: {last_error}")
+        
+        return (
+            GeneratedCode(
+                step_id=step_id,
+                hypothesis_id=hypo_id,
+                language="sql",
+                code=last_sql or f"-- Error: {last_error}",
+                description=step.description,
+            ),
+            ExecutionResult(
+                status=ExecutionStatus.ERROR,
+                output_type=OutputType.ERROR,
+                output=None,
+                error_message=f"Failed after {max_retries} attempts: {last_error}",
+            ),
+        )
+    
+    def _build_sql_error_hints(self, error: str, schema_context) -> str:
+        """Build detailed error hints based on error message and schema."""
+        hints = []
+        error_lower = error.lower()
+        
+        # Column does not exist
+        if "column" in error_lower and "does not exist" in error_lower:
+            hints.append("""**Lỗi: Column không tồn tại**
+- Kiểm tra lại tên cột chính xác từ schema context
+- Alias bảng phải đúng (vd: o.vnpay_final_amount thay vì orders.vnpay_final_amount)
+- Không đoán tên cột, chỉ dùng cột có trong schema""")
+        
+        # Function does not exist
+        if "function" in error_lower and "does not exist" in error_lower:
+            hints.append("""**Lỗi: Function không tồn tại (PostgreSQL syntax)**
+
+POSTGRESQL DATE FUNCTIONS:
+- EXTRACT(DOW FROM timestamp) -- 0=Sunday, 6=Saturday
+- EXTRACT(MONTH FROM timestamp), EXTRACT(YEAR FROM timestamp)
+- DATE_TRUNC('month', timestamp)
+- TO_CHAR(timestamp, 'YYYY-MM-DD')
+- CURRENT_DATE, CURRENT_TIMESTAMP, NOW()
+
+KHÔNG DÙNG:
+- day_of_week() → Dùng: EXTRACT(DOW FROM date)
+- WEEK() → Dùng: EXTRACT(WEEK FROM date)
+- DAYNAME() → Dùng: TO_CHAR(date, 'Day')""")
+        
+        # Type mismatch / invalid input syntax
+        if "invalid input syntax" in error_lower or "type" in error_lower:
+            hints.append("""**Lỗi: Type mismatch**
+- Không so sánh text với integer
+- Cast nếu cần: CAST(column AS INTEGER) hoặc CAST(column AS VARCHAR)
+- SUM/AVG chỉ dùng với số, không dùng với text
+- Kiểm tra data type thực sự trong schema trước khi aggregate""")
+        
+        # Sum/aggregate on wrong type
+        if "sum(text)" in error_lower or "aggregate" in error_lower:
+            hints.append("""**Lỗi: Aggregate trên sai type**
+- SUM() chỉ dùng với cột số (INTEGER, BIGINT, DOUBLE)
+- Kiểm tra data type thực sự của cột
+- Có thể cần: SUM(CAST(column AS DOUBLE))
+- Hoặc dùng cột số khác có nghĩa tương đương""")
+        
+        # Extract relevant schema info
+        if schema_context:
+            tables_info = self._extract_tables_info(schema_context)
+            if tables_info:
+                hints.append(f"""**Schema context (columns có sẵn):**
+{tables_info}""")
+        
+        if not hints:
+            hints.append(f"""**Lỗi không xác định:** {error}
+- Kiểm tra syntax Trino SQL
+- Verify tên bảng/cột từ schema
+- Đảm bảo data types phù hợp""")
+        
+        return "\n\n".join(hints)
+    
+    def _extract_tables_info(self, schema_context) -> str:
+        """Extract relevant table/column info from schema context."""
+        if not schema_context:
+            return ""
+        
+        info_lines = []
+        tables = schema_context.tables if hasattr(schema_context, 'tables') else []
+        
+        for table in tables[:5]:  # Limit to 5 tables
+            table_name = table.name if hasattr(table, 'name') else str(table)
+            cols = []
+            
+            if hasattr(table, 'columns'):
+                for col in table.columns[:8]:  # Limit columns shown
+                    col_name = col.name if hasattr(col, 'name') else str(col)
+                    col_type = col.data_type if hasattr(col, 'data_type') else "unknown"
+                    cols.append(f"    - {col_name} ({col_type})")
+            
+            if cols:
+                info_lines.append(f"• {table_name}:")
+                info_lines.extend(cols)
+        
+        return "\n".join(info_lines) if info_lines else ""
     
     async def _generate_visualization_code(
         self,
@@ -400,98 +539,185 @@ import pandas as pd
         hypo_id: str,
         previous_results: Dict[str, ExecutionResult],
     ) -> tuple[GeneratedCode, ExecutionResult]:
-        """Generate and execute Python visualization code."""
+        """Generate and execute Python visualization code with SQL data from ALL dependencies."""
         
-        # Find dependent SQL step
+        # Find dependent SQL steps
         deps = step.depends_on if hasattr(step, 'depends_on') else step.dependencies or []
-        data_var = "df"
         
-        # Get SQL result from previous step if available
-        sql_data = None
-        if deps:
-            dep_result = previous_results.get(deps[0])
+        # Check if all dependencies succeeded - SKIP visualization if SQL failed
+        for dep_id in deps:
+            dep_result = previous_results.get(dep_id)
+            if not dep_result or dep_result.status != ExecutionStatus.SUCCESS:
+                logger.warning(f"[CodeAgent] ⚠️ Skipping visualization {step_id} - dependency {dep_id} failed or missing")
+                return (
+                    GeneratedCode(
+                        step_id=step_id,
+                        hypothesis_id=hypo_id,
+                        language="python",
+                        code="# Skipped - SQL dependency failed",
+                        description=f"Biểu đồ bị bỏ qua do SQL step {dep_id} thất bại",
+                    ),
+                    ExecutionResult(
+                        step_id=step_id,
+                        status=ExecutionStatus.SKIPPED,
+                        output={"skipped": True, "reason": f"SQL dependency {dep_id} failed"},
+                        error_message=f"Skipped due to failed SQL dependency: {dep_id}",
+                    ),
+                )
+        
+        # Collect SQL data from ALL dependencies and get column info
+        dataframes: Dict[str, list] = {}
+        data_info = []
+        for dep_id in deps:
+            dep_result = previous_results.get(dep_id)
             if dep_result and dep_result.output:
-                sql_data = dep_result.output.get("sql_data")
-            data_var = f"df_{deps[0]}"
+                sql_data = dep_result.output.get("sql_data", [])
+                columns = dep_result.output.get("columns", [])
+                if sql_data:
+                    dataframes[dep_id] = sql_data
+                    data_info.append(f"- df_{dep_id}: columns = {columns}, rows = {len(sql_data)}")
         
-        # Generate visualization code
-        code = f'''# Visualization for: {step.description}
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Data from previous SQL query
-{data_var} = pd.DataFrame(data) if 'data' in dir() else pd.DataFrame()
-
-plt.figure(figsize=(12, 6))
-plt.title("{step.description}")
-
-# Auto-detect chart type based on data
-if len({data_var}.columns) >= 2:
-    x_col = {data_var}.columns[0]
-    y_col = {data_var}.columns[1]
-    
-    # If x is categorical or few unique values, use bar chart
-    if {data_var}[x_col].dtype == 'object' or {data_var}[x_col].nunique() < 15:
-        plt.bar(range(len({data_var})), {data_var}[y_col])
-        plt.xticks(range(len({data_var})), {data_var}[x_col], rotation=45, ha='right')
-    else:
-        plt.plot({data_var}[x_col], {data_var}[y_col], marker='o')
-    
-    plt.xlabel(x_col)
-    plt.ylabel(y_col)
-
-plt.tight_layout()
-plt.savefig("{step_id}_chart.png")
-print("Chart saved to {step_id}_chart.png")
-'''
+        # Get visualization requirements from step
+        reqs = step.requirements if hasattr(step, 'requirements') else step.details or {}
+        chart_type = reqs.get("chart_type", "auto")
+        x_axis = reqs.get("x_axis", "")
+        y_axis = reqs.get("y_axis", "")
         
-        # Execute code via MCP
-        mcp_result = await mcp.call_tool("execute_python", {
-            "code": code,
-            "data": sql_data,
-        })
+        # Chart description for report - use step description
+        chart_description = step.description
         
-        if mcp_result.success:
-            logger.info(f"[CodeAgent] ✅ Visualization executed ({mcp_result.execution_time_ms}ms)")
+        # Ask LLM to generate visualization code
+        viz_prompt = f"""Tạo code Python để vẽ biểu đồ với matplotlib/seaborn.
+
+## Yêu cầu:
+- Mô tả: {step.description}
+- Loại biểu đồ: {chart_type}
+- Trục X: {x_axis if x_axis else 'tự động'}
+- Trục Y: {y_axis if y_axis else 'tự động'}
+
+## Dữ liệu có sẵn:
+{chr(10).join(data_info) if data_info else "- df: DataFrame từ SQL result"}
+
+## Lưu ý:
+1. df đã có sẵn (được inject), KHÔNG cần tạo lại
+2. Dùng matplotlib/seaborn
+3. Thêm title, xlabel, ylabel đầy đủ (TIẾNG VIỆT)
+4. Lưu chart ra file: plt.savefig("{step_id}_chart.png")
+5. Print thông tin về chart đã tạo
+6. Xử lý trường hợp df rỗng
+7. Title phải mô tả nội dung chart rõ ràng bằng tiếng Việt
+
+Trả về CHỈ CODE Python (không có markdown fences)."""
+
+        from langchain_core.messages import HumanMessage
+        response = await self.invoke_llm([HumanMessage(content=viz_prompt)])
+        code = response.content.strip()
+        
+        # Remove markdown fences if present
+        if code.startswith("```"):
+            code = code.split("\n", 1)[-1]
+        if code.endswith("```"):
+            code = code.rsplit("```", 1)[0]
+        code = code.strip()
+        
+        logger.info(f"[CodeAgent] LLM generated visualization code ({len(code)} chars)")
+        
+        # Execute code with injected DataFrames - with retry loop
+        from src.mcp.tools.code_interpreter import CodeInterpreter
+        from src.mcp.server import ToolResult
+        
+        max_retries = 3
+        last_error = None
+        current_code = code
+        
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"[CodeAgent] Visualization attempt {attempt}/{max_retries}")
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="python",
-                    code=code,
-                    description=step.description,
-                    dependencies=deps,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.SUCCESS,
-                    output_type=OutputType.IMAGE,
-                    output={
-                        "stdout": mcp_result.output.get("stdout", ""),
-                        "images": mcp_result.output.get("images", []),
-                    },
+            if dataframes:
+                interpreter = CodeInterpreter()
+                mcp_result = await interpreter.execute_with_multiple_dataframes(
+                    code=current_code,
+                    dataframes=dataframes
+                )
+                # Wrap in ToolResult format
+                mcp_result = ToolResult(
+                    success=mcp_result.success,
+                    output={"stdout": mcp_result.output, "images": mcp_result.images},
+                    error=mcp_result.error,
                     execution_time_ms=mcp_result.execution_time_ms,
-                ),
-            )
-        else:
-            logger.error(f"[CodeAgent] ❌ Visualization failed: {mcp_result.error}")
+                )
+            else:
+                mcp_result = await mcp.call_tool("execute_python", {"code": current_code})
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="python",
-                    code=code,
-                    description=step.description,
-                    dependencies=deps,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.ERROR,
-                    output_type=OutputType.ERROR,
-                    error_message=mcp_result.error,
-                ),
-            )
+            if mcp_result.success:
+                logger.info(f"[CodeAgent] ✅ Visualization executed ({mcp_result.execution_time_ms}ms)")
+                
+                return (
+                    GeneratedCode(
+                        step_id=step_id,
+                        hypothesis_id=hypo_id,
+                        language="python",
+                        code=current_code,
+                        description=step.description,
+                        dependencies=deps,
+                    ),
+                    ExecutionResult(
+                        status=ExecutionStatus.SUCCESS,
+                        output_type=OutputType.IMAGE,
+                        output={
+                            "stdout": mcp_result.output.get("stdout", ""),
+                            "images": mcp_result.output.get("images", []),
+                            "chart_description": chart_description,  # Save for report
+                        },
+                        execution_time_ms=mcp_result.execution_time_ms,
+                    ),
+                )
+            else:
+                last_error = mcp_result.error
+                logger.warning(f"[CodeAgent] ⚠️ Visualization failed (attempt {attempt}): {last_error}")
+                
+                # Ask LLM to fix the code
+                if attempt < max_retries:
+                    fix_prompt = f"""Code Python sau bị lỗi:
+
+```python
+{current_code}
+```
+
+Lỗi: {last_error}
+
+Sửa code để tránh lỗi trên. Trả về CHỈCODE Python mới (không có markdown fences).
+Lưu ý: df là DataFrame có sẵn từ SQL result."""
+                    
+                    from langchain_core.messages import HumanMessage
+                    response = await self.invoke_llm([HumanMessage(content=fix_prompt)])
+                    current_code = response.content.strip()
+                    # Remove markdown fences if present
+                    if current_code.startswith("```"):
+                        current_code = current_code.split("\n", 1)[-1]
+                    if current_code.endswith("```"):
+                        current_code = current_code.rsplit("```", 1)[0]
+                    current_code = current_code.strip()
+                    logger.info(f"[CodeAgent] LLM generated fixed code ({len(current_code)} chars)")
+        
+        # All retries exhausted
+        logger.error(f"[CodeAgent] ❌ Visualization failed after {max_retries} attempts: {last_error}")
+        
+        return (
+            GeneratedCode(
+                step_id=step_id,
+                hypothesis_id=hypo_id,
+                language="python",
+                code=current_code,
+                description=step.description,
+                dependencies=deps,
+            ),
+            ExecutionResult(
+                status=ExecutionStatus.ERROR,
+                output_type=OutputType.ERROR,
+                error_message=f"Failed after {max_retries} attempts: {last_error}",
+            ),
+        )
     
     async def _generate_analysis_code(
         self,
@@ -501,96 +727,160 @@ print("Chart saved to {step_id}_chart.png")
         hypo_id: str,
         previous_results: Dict[str, ExecutionResult],
     ) -> tuple[GeneratedCode, ExecutionResult]:
-        """Generate and execute Python analysis code."""
+        """Generate and execute Python analysis code with SQL data from ALL dependencies."""
         
         deps = step.depends_on if hasattr(step, 'depends_on') else step.dependencies or []
         
-        # Get SQL result from previous step if available
-        sql_data = None
-        if deps:
-            dep_result = previous_results.get(deps[0])
+        # Collect SQL data from ALL dependencies
+        dataframes: Dict[str, list] = {}
+        for dep_id in deps:
+            dep_result = previous_results.get(dep_id)
             if dep_result and dep_result.output:
-                sql_data = dep_result.output.get("sql_data")
+                sql_data = dep_result.output.get("sql_data", [])
+                if sql_data:
+                    dataframes[dep_id] = sql_data
+        
+        # Generate clean analysis code
+        # Code can reference: df (if single dependency) or df_s1, df_s2, etc.
+        if len(dataframes) == 1:
+            df_note = f"# Data available as 'df' from step {list(dataframes.keys())[0]}"
+        elif len(dataframes) > 1:
+            df_names = ", ".join(f"df_{k}" for k in dataframes.keys())
+            df_note = f"# Data available as: {df_names}"
+        else:
+            df_note = "# No data from previous steps"
         
         code = f'''# Analysis for: {step.description}
-import pandas as pd
-import numpy as np
-
-# Data from previous SQL query
-df = pd.DataFrame(data) if 'data' in dir() else pd.DataFrame()
+{df_note}
 
 # Perform analysis
 print("="*50)
 print("Analysis: {step.description}")
 print("="*50)
 
-if not df.empty:
+# Check available DataFrames
+if 'df' in dir() and not df.empty:
     print(f"\\nData shape: {{df.shape}}")
     print(f"\\nColumns: {{list(df.columns)}}")
+    print(f"\\nFirst 5 rows:")
+    print(df.head())
     print(f"\\nSummary statistics:")
     print(df.describe())
     
-    # Basic insights
-    for col in df.select_dtypes(include=[np.number]).columns:
+    # Basic insights for numeric columns
+    for col in df.select_dtypes(include=[np.number]).columns[:5]:
         print(f"\\n{{col}}:")
         print(f"  Mean: {{df[col].mean():.2f}}")
         print(f"  Max: {{df[col].max():.2f}}")
         print(f"  Min: {{df[col].min():.2f}}")
+    
+    row_count = len(df)
 else:
     print("No data available for analysis")
+    row_count = 0
 
 result = {{
     "description": "{step.description}",
-    "status": "completed"
+    "status": "completed",
+    "row_count": row_count
 }}
 print(f"\\nResult: {{result}}")
 '''
         
-        # Execute code via MCP
-        mcp_result = await mcp.call_tool("execute_python", {
-            "code": code,
-            "data": sql_data,
-        })
+        # Execute code with injected DataFrames - with retry loop
+        from src.mcp.tools.code_interpreter import CodeInterpreter
+        from src.mcp.server import ToolResult
         
-        if mcp_result.success:
-            logger.info(f"[CodeAgent] ✅ Analysis executed ({mcp_result.execution_time_ms}ms)")
+        max_retries = 3
+        last_error = None
+        current_code = code
+        
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"[CodeAgent] Analysis attempt {attempt}/{max_retries}")
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="python",
-                    code=code,
-                    description=step.description,
-                    dependencies=deps,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.SUCCESS,
-                    output_type=OutputType.JSON,
-                    output={
-                        "stdout": mcp_result.output.get("stdout", ""),
-                    },
+            if dataframes:
+                interpreter = CodeInterpreter()
+                mcp_result = await interpreter.execute_with_multiple_dataframes(
+                    code=current_code,
+                    dataframes=dataframes
+                )
+                # Wrap in ToolResult format
+                mcp_result = ToolResult(
+                    success=mcp_result.success,
+                    output={"stdout": mcp_result.output, "images": mcp_result.images},
+                    error=mcp_result.error,
                     execution_time_ms=mcp_result.execution_time_ms,
-                ),
-            )
-        else:
-            logger.error(f"[CodeAgent] ❌ Analysis failed: {mcp_result.error}")
+                )
+            else:
+                # No data, execute directly
+                mcp_result = await mcp.call_tool("execute_python", {"code": current_code})
             
-            return (
-                GeneratedCode(
-                    step_id=step_id,
-                    hypothesis_id=hypo_id,
-                    language="python",
-                    code=code,
-                    description=step.description,
-                    dependencies=deps,
-                ),
-                ExecutionResult(
-                    status=ExecutionStatus.ERROR,
-                    output_type=OutputType.ERROR,
-                    error_message=mcp_result.error,
-                ),
-            )
+            if mcp_result.success:
+                logger.info(f"[CodeAgent] ✅ Analysis executed ({mcp_result.execution_time_ms}ms)")
+                
+                return (
+                    GeneratedCode(
+                        step_id=step_id,
+                        hypothesis_id=hypo_id,
+                        language="python",
+                        code=current_code,
+                        description=step.description,
+                        dependencies=deps,
+                    ),
+                    ExecutionResult(
+                        status=ExecutionStatus.SUCCESS,
+                        output_type=OutputType.JSON,
+                        output={
+                            "stdout": mcp_result.output.get("stdout", ""),
+                        },
+                        execution_time_ms=mcp_result.execution_time_ms,
+                    ),
+                )
+            else:
+                last_error = mcp_result.error
+                logger.warning(f"[CodeAgent] ⚠️ Analysis failed (attempt {attempt}): {last_error}")
+                
+                # Ask LLM to fix the code
+                if attempt < max_retries:
+                    fix_prompt = f"""Code Python sau bị lỗi:
+
+```python
+{current_code}
+```
+
+Lỗi: {last_error}
+
+Sửa code để tránh lỗi trên. Trả về CHỈ CODE Python mới."""
+                    
+                    from langchain_core.messages import HumanMessage
+                    response = await self.invoke_llm([HumanMessage(content=fix_prompt)])
+                    current_code = response.content.strip()
+                    # Remove markdown fences
+                    if current_code.startswith("```"):
+                        current_code = current_code.split("\n", 1)[-1]
+                    if current_code.endswith("```"):
+                        current_code = current_code.rsplit("```", 1)[0]
+                    current_code = current_code.strip()
+                    logger.info(f"[CodeAgent] LLM generated fixed code ({len(current_code)} chars)")
+        
+        # All retries exhausted
+        logger.error(f"[CodeAgent] ❌ Analysis failed after {max_retries} attempts: {last_error}")
+        
+        return (
+            GeneratedCode(
+                step_id=step_id,
+                hypothesis_id=hypo_id,
+                language="python",
+                code=current_code,
+                description=step.description,
+                dependencies=deps,
+            ),
+            ExecutionResult(
+                status=ExecutionStatus.ERROR,
+                output_type=OutputType.ERROR,
+                error_message=f"Failed after {max_retries} attempts: {last_error}",
+            ),
+        )
     
     async def _generate_code_with_llm(
         self,

@@ -170,7 +170,7 @@ columns:
     semantics: [mapping, internal]
 
   vendor_film_id:
-    data_type: bigint
+    data_type: varchar
     description: "ID phim phía vendor."
     semantics: [vendor, film, external_id]
 

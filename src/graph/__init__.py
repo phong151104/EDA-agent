@@ -17,6 +17,7 @@ from .nodes import (
     planner_node,
 )
 from .state import (
+    AnalysisPhase,
     EDAState,
     WorkflowPhase,
     create_initial_state,
@@ -29,6 +30,7 @@ from .workflow import (
 
 __all__ = [
     # State
+    "AnalysisPhase",
     "EDAState",
     "WorkflowPhase",
     "create_initial_state",

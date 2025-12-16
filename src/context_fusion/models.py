@@ -63,16 +63,26 @@ class TableNode:
     
     table_name: str
     domain: str
+    catalog: str = "lakehouse"  # e.g., lakehouse
+    schema: str = "lh_vnfilm_v2"  # e.g., lh_vnfilm_v2 or cdp_mart
     business_name: str = ""
     description: str = ""
     grain: str = ""
     table_type: str = ""
     tags: list[str] = field(default_factory=list)
     
+    @property
+    def full_name(self) -> str:
+        """Get fully qualified table name: catalog.schema.table_name"""
+        return f"{self.catalog}.{self.schema}.{self.table_name}"
+    
     def to_dict(self) -> dict[str, Any]:
         return {
             "table_name": self.table_name,
             "domain": self.domain,
+            "catalog": self.catalog,
+            "schema": self.schema,
+            "full_name": self.full_name,
             "business_name": self.business_name,
             "description": self.description,
             "grain": self.grain,
@@ -294,11 +304,12 @@ class SubGraph:
         """Detailed format with full descriptions."""
         lines = []
         
-        # Tables
+        # Tables with full qualified names
         if self.tables:
             lines.append("## Available Tables")
             for t in self.tables:
-                lines.append(f"- **{t.table_name}** ({t.business_name})")
+                # Show full name: lakehouse.cdp_mart.dim_campaign
+                lines.append(f"- **{t.full_name}** ({t.business_name})")
                 if t.description:
                     lines.append(f"  {t.description}")
                 if t.grain:

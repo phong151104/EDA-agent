@@ -99,39 +99,69 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
     planner = PlannerAgent()
     
     # Build input
+    analysis_phase = state.get("analysis_phase", "exploration")
+    
+    # When transitioning to deep_dive, DON'T pass previous exploration plan
+    # This forces Planner to generate fresh hypotheses based on findings
     previous_plan = None
     if state.get("current_plan"):
-        # Reconstruct AnalysisPlan from state dict
         plan_dict = state["current_plan"]
-        previous_plan = AnalysisPlan(
-            question=plan_dict.get("question", state["user_question"]),
-            hypotheses=[
-                Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])
-            ],
-            steps=[
-                AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])
-            ],
-            version=plan_dict.get("version", 1),
-        )
+        plan_phase = plan_dict.get("phase", "exploration")
+        
+        # Only carry over previous_plan if same phase (for refinement within phase)
+        if plan_phase == analysis_phase:
+            previous_plan = AnalysisPlan(
+                question=plan_dict.get("question", state["user_question"]),
+                hypotheses=[
+                    Hypothesis.from_dict(h) for h in plan_dict.get("hypotheses", [])
+                ],
+                steps=[
+                    AnalysisStep.from_dict(s) for s in plan_dict.get("steps", [])
+                ],
+                version=plan_dict.get("version", 1),
+            )
+        else:
+            logger.info(f"[Planner] Phase transition {plan_phase} → {analysis_phase}, clearing previous_plan")
     
     # Use prompt_context from Context Fusion for richer schema info
     enriched_context = state.get("enriched_context", {})
     prompt_context = state.get("prompt_context", "")
+    sub_graph = state.get("sub_graph", {})
     
     # Enhance enriched_context with prompt_context
     if prompt_context:
         enriched_context["schema_description"] = prompt_context
+    
+    # CRITICAL: Merge SubGraph into enriched_context so Planner sees actual tables
+    if sub_graph:
+        enriched_context["tables"] = sub_graph.get("tables", [])
+        enriched_context["columns"] = sub_graph.get("columns", [])
+        enriched_context["joins"] = sub_graph.get("joins", [])
+        logger.info(f"[Planner] Merged SubGraph: {len(enriched_context.get('tables', []))} tables")
     
     planner_input = PlannerInput(
         question=state["user_question"],
         enriched_context=enriched_context,
         previous_plan=previous_plan,
         critic_feedback=state.get("critic_feedback"),
+        # Two-phase analysis fields
+        analysis_phase=analysis_phase,
+        exploration_summary=state.get("exploration_summary"),
     )
     
     # Log what's being passed
+    logger.info(f"[Planner] Phase: {analysis_phase}")
     logger.info(f"[Planner] Intent: {state.get('analyzed_query', {}).get('intent', 'unknown')}")
     logger.info(f"[Planner] Tables available: {len(state.get('sub_graph', {}).get('tables', []))}")
+    
+    # Log exploration summary if in deep_dive phase
+    exploration_summary = state.get("exploration_summary")
+    if analysis_phase == "deep_dive":
+        if exploration_summary:
+            keys = list(exploration_summary.keys()) if isinstance(exploration_summary, dict) else []
+            logger.info(f"[Planner] Received exploration_summary with keys: {keys}")
+        else:
+            logger.warning("[Planner] Deep dive phase but NO exploration_summary!")
     
     # Generate plan
     output = await planner.process(planner_input)
@@ -141,12 +171,16 @@ async def planner_node(state: EDAState) -> dict[str, Any]:
     if state.get("current_plan"):
         plan_history.append(state["current_plan"])
     
+    # Save plan with current phase info
+    plan_dict = output.plan.to_dict()
+    plan_dict["phase"] = analysis_phase  # Tag plan with its phase
+    
     return {
-        "current_plan": output.plan.to_dict(),
+        "current_plan": plan_dict,
         "plan_history": plan_history,
         "hypotheses": [h.to_dict() for h in output.plan.hypotheses],
         "current_phase": WorkflowPhase.VALIDATION.value,
-        "messages": [AIMessage(content=f"[Planner] Generated plan with {len(output.plan.steps)} steps")],
+        "messages": [AIMessage(content=f"[Planner] Generated plan with {len(output.plan.steps)} steps (phase: {analysis_phase})")],
     }
 
 
@@ -386,12 +420,18 @@ async def code_agent_node(state: EDAState) -> dict[str, Any]:
         logger.warning(f"[CodeAgent] Errors occurred, retry count: {code_retry_count}")
     
     # Determine next phase
+    # ALWAYS proceed to ANALYSIS even with partial errors
+    # Analyst can work with whatever results we have
     if output.all_success:
         next_phase = WorkflowPhase.ANALYSIS.value
         logger.info("[CodeAgent] ✅ All steps executed successfully!")
     elif code_retry_count >= code_agent.max_retries:
-        next_phase = WorkflowPhase.ERROR.value
-        logger.error(f"[CodeAgent] ❌ Max retries ({code_agent.max_retries}) reached")
+        # Max retries reached - proceed with partial results instead of ERROR
+        next_phase = WorkflowPhase.ANALYSIS.value
+        success_count = sum(1 for r in output.execution_results.values() if r.status == ExecutionStatus.SUCCESS)
+        total_count = len(output.execution_results)
+        logger.warning(f"[CodeAgent] ⚠️ Max retries ({code_agent.max_retries}) reached. "
+                      f"Proceeding to analysis with {success_count}/{total_count} successful steps")
     else:
         next_phase = WorkflowPhase.EXECUTION.value
         logger.info(f"[CodeAgent] Will retry (attempt {code_retry_count + 1})")
@@ -417,8 +457,10 @@ async def analyst_node(state: EDAState) -> dict[str, Any]:
     Analyst Agent node.
     
     Evaluates execution results and generates insights.
+    For 2-phase flow: saves exploration_summary and switches phase after Phase 1.
     """
-    logger.info("Analyzing results...")
+    analysis_phase = state.get("analysis_phase", "exploration")
+    logger.info(f"Analyzing results... [Phase: {analysis_phase}]")
     
     if not state.get("execution_results"):
         return {
@@ -442,8 +484,9 @@ async def analyst_node(state: EDAState) -> dict[str, Any]:
     from src.agents.code_agent import ExecutionResult, ExecutionStatus, OutputType
     
     execution_results = {}
-    for step_num_str, result_dict in state.get("execution_results", {}).items():
-        execution_results[int(step_num_str)] = ExecutionResult(
+    for step_id, result_dict in state.get("execution_results", {}).items():
+        # Step IDs are strings like 's1', 's2' - keep as string
+        execution_results[step_id] = ExecutionResult(
             status=ExecutionStatus(result_dict.get("status", "success")),
             output_type=OutputType(result_dict.get("outputType", "text")),
             output=result_dict.get("output"),
@@ -455,19 +498,45 @@ async def analyst_node(state: EDAState) -> dict[str, Any]:
         plan=plan,
         execution_results=execution_results,
         original_question=state["user_question"],
+        analysis_phase=analysis_phase,  # Pass current phase
     )
     
     # Analyze
     output = await analyst.process(analyst_input)
     
-    return {
+    # Build result based on phase
+    result = {
         "hypothesis_evaluations": [e.to_dict() for e in output.hypothesis_evaluations],
         "insights": [i.to_dict() for i in output.insights],
         "analysis_summary": output.summary,
-        "is_insight_sufficient": output.answers_question and output.confidence >= 0.7,
-        "current_phase": WorkflowPhase.APPROVAL.value,
-        "messages": [AIMessage(content=f"[Analyst] Confidence: {output.confidence:.2f}")],
+        "messages": [AIMessage(content=f"[Analyst] Phase: {analysis_phase}, Confidence: {output.confidence:.2f}")],
     }
+    
+    if analysis_phase == "exploration":
+        # Phase 1 complete → save exploration_summary and switch to deep_dive
+        result["exploration_summary"] = output.exploration_summary
+        result["analysis_phase"] = "deep_dive"  # Switch to Phase 2
+        result["current_phase"] = WorkflowPhase.PLANNING.value  # Go back to Planner
+        result["is_insight_sufficient"] = False  # Not done yet
+        
+        # Log exploration_summary for debugging
+        if output.exploration_summary:
+            keys = list(output.exploration_summary.keys()) if isinstance(output.exploration_summary, dict) else []
+            logger.info(f"[Analyst] Exploration complete, summary keys: {keys}")
+        else:
+            logger.warning("[Analyst] Exploration complete but NO exploration_summary generated!")
+        logger.info(f"[Analyst] Switching to deep_dive phase")
+    else:
+        # Phase 2 (deep_dive)
+        result["current_phase"] = WorkflowPhase.APPROVAL.value
+        result["is_insight_sufficient"] = output.answers_question and output.confidence >= 0.7
+        
+        # Increment deep_dive iteration counter
+        deep_dive_iteration = state.get("deep_dive_iteration", 0) + 1
+        result["deep_dive_iteration"] = deep_dive_iteration
+        logger.info(f"[Analyst] Deep dive iteration {deep_dive_iteration}")
+    
+    return result
 
 
 async def approval_node(state: EDAState) -> dict[str, Any]:
@@ -475,10 +544,19 @@ async def approval_node(state: EDAState) -> dict[str, Any]:
     Insight Approval node.
     
     Checks if insights are sufficient and generates final report.
+    For 2-phase flow: checks deep_dive_iteration max (3 loops).
+    When not sufficient, provides detailed feedback to Planner.
     """
     logger.info("Checking insight sufficiency...")
     
     is_sufficient = state.get("is_insight_sufficient", False)
+    deep_dive_iteration = state.get("deep_dive_iteration", 0)
+    max_deep_dive_loops = 3
+    
+    # Force complete if max iterations reached
+    if deep_dive_iteration >= max_deep_dive_loops:
+        logger.warning(f"Max deep dive iterations ({max_deep_dive_loops}) reached, forcing completion")
+        is_sufficient = True
     
     if is_sufficient:
         # Generate final report
@@ -488,20 +566,57 @@ async def approval_node(state: EDAState) -> dict[str, Any]:
             "hypotheses": state.get("hypotheses", []),
             "evaluations": state.get("hypothesis_evaluations", []),
             "insights": state.get("insights", []),
+            "exploration_summary": state.get("exploration_summary"),
+            "deep_dive_iterations": deep_dive_iteration,
             "generated_at": state["created_at"],
         }
         
         return {
             "final_report": final_report,
+            "is_insight_sufficient": True,  # MUST be set for routing!
             "current_phase": WorkflowPhase.COMPLETE.value,
-            "messages": [AIMessage(content="[System] Analysis complete!")],
+            "messages": [AIMessage(content=f"[System] Analysis complete! (Deep dive iterations: {deep_dive_iteration})")],
         }
     else:
-        # Need more analysis - go back to planning
+        # Build detailed feedback for Planner
+        # Include analysis summary and previous hypotheses to avoid repetition
+        analysis_summary = state.get("analysis_summary", "")
+        current_plan = state.get("current_plan", {})
+        previous_hypotheses = current_plan.get("hypotheses", [])
+        
+        # Extract hypothesis statements that have already been tested
+        tested_hypotheses = [
+            h.get("statement", h.get("title", ""))
+            for h in previous_hypotheses
+        ]
+        
+        # Build detailed critic feedback
+        detailed_feedback = f"""## Phân tích chưa đủ sâu - Cần giả thuyết MỚI
+
+### Tóm tắt từ Analyst:
+{analysis_summary[:1500] if analysis_summary else 'Không có tóm tắt'}
+
+### ⚠️ CÁC GIẢ THUYẾT ĐÃ KIỂM TRA (KHÔNG LẶP LẠI):
+{chr(10).join(f'- {h}' for h in tested_hypotheses[:6])}
+
+### Yêu cầu cho kế hoạch tiếp theo:
+1. KHÔNG lặp lại các giả thuyết đã kiểm tra ở trên
+2. Đào SÂU hơn vào các phát hiện từ dữ liệu thực tế
+3. Tìm NGUYÊN NHÂN GỐC RỄ dựa trên pattern đã thấy
+4. Đề xuất các dimension/breakdown KHÁC để phân tích
+
+### Gợi ý hướng đi mới:
+- Phân tích theo segment khách hàng khác
+- So sánh hiệu suất theo nguồn/kênh khác
+- Tìm correlation với các yếu tố chưa xét
+- Drill down vào điểm dị thường đã phát hiện
+"""
+        
         return {
-            "critic_feedback": "Insights were not sufficient. Please refine the analysis.",
+            "critic_feedback": detailed_feedback,
+            "deep_dive_iteration": deep_dive_iteration,  # For display
             "current_phase": WorkflowPhase.PLANNING.value,
-            "messages": [AIMessage(content="[System] Needs more analysis, returning to planning...")],
+            "messages": [AIMessage(content=f"[System] Needs more analysis (iteration {deep_dive_iteration}/{max_deep_dive_loops}), returning to planning with detailed feedback...")],
         }
 
 

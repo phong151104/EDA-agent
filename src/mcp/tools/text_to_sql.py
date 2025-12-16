@@ -51,14 +51,27 @@ class TextToSQLResult:
 
 
 class TextToSQL:
-    """Generate Trino SQL from natural language."""
+    """Generate PostgreSQL SQL from natural language."""
     
-    SYSTEM_PROMPT = """Bạn là chuyên gia Trino SQL. Tạo SQL CHỈ dùng schema được cung cấp.
+    SYSTEM_PROMPT_TEMPLATE = """Bạn là chuyên gia PostgreSQL. Tạo SQL CHỈ dùng schema được cung cấp.
+
+=== THỜI GIAN HIỆN TẠI ===
+Hôm nay: {current_date} ({current_weekday})
+Năm hiện tại: {current_year}
+Tháng hiện tại: tháng {current_month}/{current_year}
 
 === LUẬT BẮT BUỘC ===
 1. CHỈ dùng cột có trong "## Columns" - không được bịa cột
 2. CHỈ dùng JOIN từ "## Joins" - không được tự nghĩ ra cách join
 3. Nếu cần thông tin nhưng không có cột phù hợp → dùng cột thay thế gần nhất
+4. Khi user nói "tháng 11" mà không nói năm → dùng năm {current_year}
+5. Khi user nói "năm nay" → dùng năm {current_year}
+
+=== QUAN TRỌNG VỀ TÊN BẢNG ===
+⚠️ PHẢI dùng ĐÚNG tên đầy đủ của bảng như trong "## Available Tables"
+- Ví dụ: lakehouse.lh_vnfilm_v2.orders (cho bảng vé/orders)
+- Ví dụ: lakehouse.cdp_mart.dim_campaign (cho bảng campaign)
+- KHÔNG tự đổi schema, dùng đúng schema được cung cấp
 
 === DOMAIN KNOWLEDGE ===
 • "khách hàng" = orders.bank_identity_hash  
@@ -67,13 +80,17 @@ class TextToSQL:
 • Tên vendor: vendor.name_vi
 • Tên rạp: cinema.name_vi hoặc order_film.cinema_name_vi (nếu có)
 
-=== TRINO SYNTAX ===
-• Table: lakehouse.lh_vnfilm_v2.<table_name>
-• Q1 2025: created_date >= DATE '2025-01-01' AND created_date < DATE '2025-04-01'
+=== POSTGRESQL SYNTAX ===
+• Date filter: created_date >= '{current_year}-11-01'::date AND created_date < '{current_year}-12-01'::date
+• Date trunc: DATE_TRUNC('month', created_date)
+• Day of week: EXTRACT(DOW FROM created_date) -- 0=Sunday, 6=Saturday
+• Format date: TO_CHAR(created_date, 'YYYY-MM')
+• Null handling: COALESCE(column, 0)
 • DISTINCT khi đếm unique
 
 === OUTPUT ===
-JSON: {"sql": "SELECT ...;"}"""
+JSON: {{"sql": "SELECT ..."}}"""
+
 
     def __init__(
         self,
@@ -152,6 +169,20 @@ JSON: {"sql": "SELECT ...;"}"""
         session = await build_session(prompt)
         return session.session_id, session.sub_graph
     
+    def _get_system_prompt(self) -> str:
+        """Get system prompt with current datetime filled in."""
+        from datetime import datetime
+        
+        now = datetime.now()
+        weekdays_vi = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+        
+        return self.SYSTEM_PROMPT_TEMPLATE.format(
+            current_date=now.strftime("%Y-%m-%d"),
+            current_weekday=weekdays_vi[now.weekday()],
+            current_year=now.year,
+            current_month=now.month,
+        )
+    
     def _generate_sql(self, prompt: str, sub_graph: SubGraph) -> str:
         """Generate SQL using LLM."""
         schema_context = sub_graph.to_prompt_context(compact=False)
@@ -162,10 +193,13 @@ JSON: {"sql": "SELECT ...;"}"""
             user_prompt += f"\n\n{samples_context}"
         user_prompt += f"\n\nQ: {prompt}\nSQL:"
         
+        # Get system prompt with current datetime
+        system_prompt = self._get_system_prompt()
+        
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},

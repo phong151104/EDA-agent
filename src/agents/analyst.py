@@ -81,8 +81,10 @@ class AnalystInput:
     """Input for the Analyst agent."""
     
     plan: AnalysisPlan
-    execution_results: dict[int, ExecutionResult]
+    execution_results: dict[str, ExecutionResult]  # Step IDs are strings like 's1'
     original_question: str
+    # Two-phase analysis
+    analysis_phase: str = "exploration"  # "exploration" or "deep_dive"
 
 
 @dataclass
@@ -96,6 +98,8 @@ class AnalystOutput:
     confidence: float
     needs_more_analysis: bool = False
     suggested_follow_up: str | None = None
+    # Two-phase analysis: summary for Phase 1 to pass to Phase 2
+    exploration_summary: dict[str, Any] | None = None
 
 
 class AnalystAgent(BaseAgent[AnalystInput, AnalystOutput]):
@@ -188,12 +192,11 @@ If the analysis doesn't fully answer the question:
         """
         Evaluate execution results and generate insights.
         
-        Args:
-            input_data: Analyst input with results and plan
-            
-        Returns:
-            Evaluations, insights, and summary
+        Phase 1 (Exploration): Generate exploration_summary for Phase 2
+        Phase 2 (Deep Dive): Generate detailed insights and recommendations
         """
+        is_exploration = input_data.analysis_phase == "exploration"
+        
         # Build analysis prompt
         prompt_parts = [
             f"## Original Question\n{input_data.original_question}",
@@ -220,28 +223,54 @@ If the analysis doesn't fully answer the question:
             )
             
             if result.output:
-                # Format output based on type
                 output_str = self._format_output(result)
                 prompt_parts.append(f"\n```\n{output_str}\n```")
             
             if result.error_message:
                 prompt_parts.append(f"Error: {result.error_message}")
         
-        prompt_parts.append(
-            "\n\nPlease:\n"
-            "1. Evaluate each hypothesis (validated/invalidated/needs more data)\n"
-            "2. Generate key insights from the data\n"
-            "3. Provide a summary answering the original question\n"
-            "4. Rate your confidence in the overall answer"
-        )
+        # Phase-specific instructions
+        if is_exploration:
+            prompt_parts.append("""
+## 🔍 GIAI ĐOẠN EXPLORATION - YÊU CẦU OUTPUT:
+
+Trả về JSON với format sau:
+```json
+{
+  "phase": "exploration",
+  "key_findings": ["Phát hiện chính 1", "Phát hiện chính 2", ...],
+  "data_overview": {
+    "tong_doanh_thu": "X triệu VND",
+    "thang_cao_nhat": "Tháng Y",
+    "thang_thap_nhat": "Tháng Z",
+    ...các số liệu quan trọng...
+  },
+  "trends": ["Xu hướng 1: tăng/giảm X%", "Xu hướng 2", ...],
+  "notable_points": ["Điểm đáng chú ý 1", "Điểm đáng chú ý 2", ...],
+  "summary": "Tóm tắt ngắn gọn tình hình"
+}
+```
+
+QUAN TRỌNG: Output này sẽ được dùng để tạo giả thuyết đào sâu ở Phase 2.""")
+        else:
+            prompt_parts.append("""
+## 🔬 GIAI ĐOẠN DEEP DIVE - YÊU CẦU OUTPUT:
+
+Hãy:
+1. Đánh giá từng hypothesis (validated/invalidated/needs more data)
+2. Tìm NGUYÊN NHÂN GỐC RỄ cho các hiện tượng
+3. Đưa ra INSIGHTS chi tiết và KHUYẾN NGHỊ hành động
+4. Đánh giá mức độ confident của kết luận
+
+Trả về phân tích chi tiết, không cần JSON format.""")
         
         prompt = "\n".join(prompt_parts)
         
         # Call LLM
         response = await self.invoke_llm([HumanMessage(content=prompt)])
         
-        # Parse response
-        return self._parse_response(response.content, input_data)
+        # Parse response based on phase
+        return self._parse_response(response.content, input_data, is_exploration)
     
     def _format_output(self, result: ExecutionResult) -> str:
         """Format execution output for prompt."""
@@ -263,12 +292,16 @@ If the analysis doesn't fully answer the question:
         self,
         response_content: str,
         input_data: AnalystInput,
+        is_exploration: bool = False,
     ) -> AnalystOutput:
         """
         Parse LLM response into AnalystOutput.
         
-        TODO: Implement proper structured output parsing.
+        For exploration phase, tries to extract JSON with exploration_summary.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Placeholder evaluations
         evaluations = []
         for h in input_data.plan.hypotheses:
@@ -281,11 +314,67 @@ If the analysis doesn't fully answer the question:
                 )
             )
         
+        exploration_summary = None
+        if is_exploration:
+            # Try to parse JSON from response
+            import json
+            import re
+            
+            # Try multiple patterns to find JSON
+            patterns = [
+                r'```json\s*([\s\S]*?)\s*```',  # ```json ... ```
+                r'```\s*([\s\S]*?)\s*```',       # ``` ... ```
+                r'\{[\s\S]*?"phase"[\s\S]*?\}',  # Inline JSON with "phase"
+            ]
+            
+            for pattern in patterns:
+                json_match = re.search(pattern, response_content)
+                if json_match:
+                    try:
+                        json_str = json_match.group(1) if '```' in pattern else json_match.group(0)
+                        exploration_summary = json.loads(json_str)
+                        logger.info(f"[Analyst] Parsed exploration_summary with keys: {list(exploration_summary.keys())}")
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            
+            # Fallback: extract key info from text
+            if not exploration_summary:
+                logger.warning("[Analyst] Could not parse JSON, creating fallback exploration_summary")
+                exploration_summary = {
+                    "key_findings": self._extract_findings_from_text(response_content),
+                    "summary": response_content[:1500],
+                    "raw_response": True,
+                }
+        
         return AnalystOutput(
             hypothesis_evaluations=evaluations,
             insights=[],
             summary=str(response_content),
-            answers_question=False,  # TODO: Parse from response
+            answers_question=not is_exploration,  # Phase 1 doesn't answer yet
             confidence=0.5,
-            needs_more_analysis=True,
+            needs_more_analysis=is_exploration,  # Phase 1 always needs Phase 2
+            exploration_summary=exploration_summary,
         )
+    
+    def _extract_findings_from_text(self, text: str) -> list[str]:
+        """Extract bullet points or numbered items from text as findings."""
+        import re
+        findings = []
+        
+        # Look for bullet points or numbered items
+        patterns = [
+            r'[-•]\s*(.{20,100})',   # Bullet points
+            r'\d+\.\s*(.{20,100})',   # Numbered items
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text)
+            findings.extend(matches[:3])
+        
+        if not findings:
+            # Take first 3 sentences
+            sentences = text.split('.')[:3]
+            findings = [s.strip() + '.' for s in sentences if len(s.strip()) > 20]
+        
+        return findings[:5]

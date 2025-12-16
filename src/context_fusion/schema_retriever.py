@@ -224,6 +224,8 @@ class SchemaRetriever:
             TableNode(
                 table_name=t.get("table_name", ""),
                 domain=domain,
+                catalog=t.get("catalog") or "lakehouse",
+                schema=t.get("schema") or "lh_vnfilm_v2",
                 business_name=t.get("business_name", ""),
                 description=t.get("description", ""),
                 grain=t.get("grain", ""),
@@ -525,6 +527,8 @@ class SchemaRetriever:
         MATCH (t:Table)
         WHERE t.table_name IN $table_names
         RETURN t.table_name AS table_name,
+               t.catalog AS catalog,
+               t.schema AS schema,
                t.business_name AS business_name,
                t.table_type AS table_type,
                t.description AS description,

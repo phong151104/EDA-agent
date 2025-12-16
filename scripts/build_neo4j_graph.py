@@ -548,6 +548,8 @@ class Neo4jGraphBuilder:
         for table in metadata.tables:
             pk_set = set(table.primary_key)
             time_set = set(table.time_columns)
+            # Build FK column set from foreign_keys
+            fk_set = {fk.column for fk in table.foreign_keys}
 
             for col in table.columns:
                 all_columns.append({
@@ -562,7 +564,8 @@ class Neo4jGraphBuilder:
                     "sensitive": col.sensitive,
                     "domain": table.domain,
                     "is_primary_key": col.column_name in pk_set,
-                    "is_time_column": col.column_name in time_set
+                    "is_time_column": col.column_name in time_set,
+                    "is_foreign_key": col.column_name in fk_set,  # NEW
                 })
 
         logger.info(f"Creating {len(all_columns)} Column nodes...")
@@ -583,7 +586,8 @@ class Neo4jGraphBuilder:
                 MATCH (t:Table {domain: c.domain, table_name: c.table_name})
                 MERGE (t)-[r:HAS_COLUMN]->(col)
                 SET r.primary_key = c.is_primary_key,
-                    r.time_column = c.is_time_column
+                    r.time_column = c.is_time_column,
+                    r.foreign_key = c.is_foreign_key
             """, columns=columns)
 
         for i in range(0, len(all_columns), self.BATCH_SIZE):

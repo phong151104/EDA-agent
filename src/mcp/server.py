@@ -57,26 +57,64 @@ class MCPServer:
         database: str | None = None,
     ) -> ToolResult:
         """
-        Execute a SQL query.
+        Execute a SQL query on PostgreSQL.
         
         Args:
             query: SQL query to execute
-            parameters: Query parameters
-            database: Target database
+            parameters: Query parameters (not used for now)
+            database: Target database (not used, uses default)
             
         Returns:
             ToolResult with query results
         """
-        logger.info(f"Executing SQL: {query[:100]}...")
+        import time
+        from src.mcp.db import Database
         
-        # TODO: Implement actual SQL execution
-        # Should connect to PostgreSQL and execute query
+        start_time = time.time()
+        logger.info(f"[MCP] Executing SQL: {query[:200]}...")
         
-        return ToolResult(
-            success=True,
-            output={"rows": [], "columns": []},
-            execution_time_ms=50,
-        )
+        try:
+            # Execute query
+            rows = await Database.execute(query)
+            
+            # Get column names from first row
+            columns = list(rows[0].keys()) if rows else []
+            
+            # Convert to serializable format
+            # Handle special types like datetime, Decimal
+            serializable_rows = []
+            for row in rows:
+                clean_row = {}
+                for k, v in row.items():
+                    if hasattr(v, 'isoformat'):  # datetime
+                        clean_row[k] = v.isoformat()
+                    elif hasattr(v, '__float__'):  # Decimal
+                        clean_row[k] = float(v)
+                    else:
+                        clean_row[k] = v
+                serializable_rows.append(clean_row)
+            
+            execution_time_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(f"[MCP] Query returned {len(rows)} rows in {execution_time_ms}ms")
+            
+            return ToolResult(
+                success=True,
+                output={
+                    "rows": serializable_rows,
+                    "columns": columns,
+                    "row_count": len(rows),
+                },
+                execution_time_ms=execution_time_ms,
+            )
+        except Exception as e:
+            logger.error(f"[MCP] SQL execution error: {e}")
+            return ToolResult(
+                success=False,
+                output={"rows": [], "columns": []},
+                error=str(e),
+                execution_time_ms=int((time.time() - start_time) * 1000),
+            )
     
     async def execute_python(
         self,

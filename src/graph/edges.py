@@ -46,7 +46,7 @@ def route_after_code_agent(
     Decision:
     - If all success → proceed to Analyst
     - If errors and under max retries → retry Code Agent
-    - If max retries reached → error
+    - If max retries reached → proceed to Analyst with partial results (NOT error)
     """
     # Check if there are any execution results
     execution_results = state.get("execution_results", {})
@@ -67,21 +67,31 @@ def route_after_code_agent(
     max_retries = config.max_code_retries
     
     if retry_count >= max_retries:
-        return "error"
+        # Proceed to analyst with partial results - don't go to error!
+        # Analyst can work with whatever successful steps we have
+        return "analyst"
     
     return "code_agent"
 
 
 def route_after_analyst(
     state: EDAState,
-) -> Literal["approval", "code_agent"]:
+) -> Literal["approval", "code_agent", "planner"]:
     """
     Route after Analyst evaluation.
     
-    Decision:
-    - If hypothesis evaluations indicate invalid results → retry execution
-    - Otherwise → proceed to approval
+    Decision for TWO-PHASE FLOW:
+    - Phase 1 (exploration) complete → switch to deep_dive, go to planner
+    - Phase 2 (deep_dive) → go to approval (or planner if needs more loops)
     """
+    analysis_phase = state.get("analysis_phase", "exploration")
+    
+    # Phase 1 complete → move to Phase 2
+    if analysis_phase == "exploration":
+        # Exploration done, need to go to Planner for deep dive
+        return "planner"
+    
+    # Phase 2 - check if we need more analysis
     evaluations = state.get("hypothesis_evaluations", [])
     
     # Check if any evaluation indicates need for re-execution
@@ -91,7 +101,6 @@ def route_after_analyst(
     )
     
     if needs_rerun:
-        # Reset retry count for new attempt
         return "code_agent"
     
     return "approval"

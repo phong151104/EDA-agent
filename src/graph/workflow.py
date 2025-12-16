@@ -112,13 +112,14 @@ def create_eda_workflow() -> StateGraph:
         },
     )
     
-    # Analyst → Approval or Code Agent (needs re-run)
+    # Analyst → Approval or Code Agent (needs re-run) or Planner (phase transition)
     workflow.add_conditional_edges(
         "analyst",
         route_after_analyst,
         {
             "approval": "approval",
             "code_agent": "code_agent",
+            "planner": "planner",  # NEW: Phase 1 → Phase 2 transition
         },
     )
     
